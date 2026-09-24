@@ -13,5 +13,4 @@ build
 .DS_Store
 
 # Java generado por slice2java (la fuente es Chat.ice)
-common/src/main/java/
 
