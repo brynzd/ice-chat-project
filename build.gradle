@@ -4,3 +4,21 @@
  * This is a general purpose Gradle build.
  * Learn more about Gradle by exploring our Samples at https://docs.gradle.org/9.7.1/samples
  */
+
+allprojects{
+    repositories{
+        mavenCentral()
+    }
+}
+
+subprojects{
+    apply plugin: 'java'
+    java{
+        sourceCompatibility = javaVersion.VERSION_17
+        targetCompatibility = javaVersion.VERSION_17
+    }
+
+    dependencies{
+        implementation 'com.zerocc:ice:3.7.10'
+    }
+}
