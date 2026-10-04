@@ -1,0 +1,14 @@
+dependencies {
+    implementation project(':common')
+}
+
+// ./gradlew runClient
+tasks.register('runClient', JavaExec) {
+    group = 'application'
+    description = 'Inicia el cliente del chat (CLI)'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'client.Client'
+    workingDir = projectDir
+    // Conecta la consola al proceso para que la CLI pueda leer comandos
+    standardInput = System.in
+}

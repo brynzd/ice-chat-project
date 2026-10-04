@@ -1,0 +1,12 @@
+dependencies {
+    implementation project(':common')
+}
+
+// ./gradlew runServer
+tasks.register('runServer', JavaExec) {
+    group = 'application'
+    description = 'Inicia el servidor Ice del chat'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'server.Server'
+    workingDir = projectDir
+}

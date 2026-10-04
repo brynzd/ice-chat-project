@@ -1,16 +1,32 @@
 # Gradle
-.gradle
-build
+.gradle/
+build/
+# El wrapper SI se versiona (necesario para ./gradlew)
+!gradle/wrapper/gradle-wrapper.jar
+
+# Codigo generado por slice2java (la fuente es common/src/main/slice/*.ice)
+**/generated-src/
 
 # Kotlin plugin
 .kotlin
 
-# IDE
-.vscode
-.idea
+# IDE (IntelliJ, VS Code, Eclipse, NetBeans)
+.idea/
+*.iml
+.vscode/
+.settings/
+.project
+.classpath
+bin/
+nbproject/
+out/
 
-# macOS
+# Archivos recibidos / temporales en tiempo de ejecucion
+received/
+downloads/
+*.tmp
+*.log
+
+# OS
 .DS_Store
-
-# Java generado por slice2java (la fuente es Chat.ice)
-
+Thumbs.db

@@ -1,24 +1,18 @@
 plugins {
     id 'java-library'
+    // Plugin oficial de ZeroC: compila los .ice a Java en build/generated-src
+    id 'com.zeroc.gradle.ice-builder.slice' version '1.5.2'
 }
 
-// Tarea para compilar Slice a Java antes de compilar el codigo fuente
-task compileSlice(type: Exec) {
-    description = 'Compila Chat.ice a codigo fuente Java usando slice2java'
-
-    def outputDir = layout.projectDirectory.dir('src/main/java')
-    def sliceFile = layout.projectDirectory.file('src/main/slice/Chat.ice')
-
-    inputs.file(sliceFile)
-    outputs.dir(outputDir)
-
-    doFirst {
-        outputDir.asFile.mkdirs()
+// slice2java se localiza automaticamente (registro de Windows o ICE_HOME).
+// Debe coincidir con la version del runtime declarada abajo.
+slice {
+    java {
+        files = [file('src/main/slice/Chat.ice')]
     }
-
-    // Invoca la utilidad nativa slice2java de ZeroC
-    commandLine 'slice2java', '--output-dir', outputDir.asFile.absolutePath, sliceFile.asFile.absolutePath
 }
 
-// Asegura que Java dependa de la generacion previa del codigo de Slice
-compileJava.dependsOn compileSlice
+dependencies {
+    // 'api' expone Ice a server y client sin redeclararlo
+    api 'com.zeroc:ice:3.7.11'
+}
