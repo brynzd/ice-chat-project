@@ -1,6 +1,7 @@
 package client.cli;
 
 import chat.ChatException;
+import chat.RoomInfo;
 import chat.TextMessage;
 import client.core.ChatClient;
 import client.core.ChatListener;
@@ -44,6 +45,12 @@ public final class Cli implements ChatListener {
             "  /login <nick>        iniciar sesion",
             "  /users               ver usuarios conectados",
             "  /msg <nick> <texto>  mensaje privado",
+            "  /rooms               ver las salas",
+            "  /create <sala>       crear una sala (quedas dentro)",
+            "  /join <sala>         unirse a una sala",
+            "  /leave <sala>        salir de una sala",
+            "  /members <sala>      ver los miembros de una sala",
+            "  /r <sala> <texto>    mensaje a una sala",
             "  /logout              cerrar sesion",
             "  /help                esta ayuda",
             "  /quit                salir");
@@ -73,7 +80,7 @@ public final class Cli implements ChatListener {
             return true;
         }
         if (!line.startsWith("/")) {
-            print("Usa /msg <nick> <texto> para enviar un mensaje (/help para ver los comandos)");
+            print("Usa /msg <nick> <texto> o /r <sala> <texto> para enviar un mensaje (/help para ver los comandos)");
             return true;
         }
         String[] parts = line.split("\\s+", 3);
@@ -87,6 +94,12 @@ public final class Cli implements ChatListener {
                 case "/login" -> login(parts);
                 case "/users" -> users();
                 case "/msg" -> msg(parts);
+                case "/rooms" -> rooms();
+                case "/create" -> create(parts);
+                case "/join" -> join(parts);
+                case "/leave" -> leave(parts);
+                case "/members" -> members(parts);
+                case "/r" -> roomMsg(parts);
                 case "/logout" -> logout();
                 default -> print("Comando desconocido: " + parts[0] + " (/help para ver los comandos)");
             }
@@ -111,7 +124,7 @@ public final class Cli implements ChatListener {
                 + String.join(", ", online));
     }
 
-    private void users() {
+    private void users() throws ChatException {
         String[] online = chat.listUsers();
         print("Conectados (" + online.length + "): " + String.join(", ", online));
     }
@@ -129,6 +142,87 @@ public final class Cli implements ChatListener {
                 print("[error] " + describe(error));
             }
         });
+    }
+
+    // ---- Salas ----
+
+    private void rooms() throws ChatException {
+        RoomInfo[] rooms = chat.listRooms();
+        if (rooms.length == 0) {
+            print("No hay salas. Crea una con /create <sala>");
+            return;
+        }
+        StringBuilder text = new StringBuilder("Salas (" + rooms.length + "):");
+        for (RoomInfo room : rooms) {
+            text.append(System.lineSeparator()).append("  #").append(room.name)
+                    .append(" (").append(room.memberCount).append(room.memberCount == 1 ? " miembro)" : " miembros)");
+            if (room.hasActiveCall) {
+                text.append(" - llamada activa");
+            }
+        }
+        print(text.toString()); // un solo print: los eventos no se mezclan dentro del listado
+    }
+
+    private void create(String[] parts) throws ChatException {
+        if (parts.length != 2) {
+            print("Uso: /create <sala>");
+            return;
+        }
+        String room = roomName(parts[1]);
+        chat.createRoom(room);
+        print("Sala #" + room + " creada. Escribe en ella con /r " + room + " <texto>");
+    }
+
+    private void join(String[] parts) throws ChatException {
+        if (parts.length != 2) {
+            print("Uso: /join <sala>");
+            return;
+        }
+        String room = roomName(parts[1]);
+        chat.joinRoom(room);
+        String[] members = chat.listMembers(room);
+        print("Estas en #" + room + ". Miembros (" + members.length + "): " + String.join(", ", members)
+                + ". Escribe con /r " + room + " <texto>");
+    }
+
+    private void leave(String[] parts) throws ChatException {
+        if (parts.length != 2) {
+            print("Uso: /leave <sala>");
+            return;
+        }
+        String room = roomName(parts[1]);
+        chat.leaveRoom(room);
+        print("Saliste de #" + room);
+    }
+
+    private void members(String[] parts) throws ChatException {
+        if (parts.length != 2) {
+            print("Uso: /members <sala>");
+            return;
+        }
+        String room = roomName(parts[1]);
+        String[] members = chat.listMembers(room);
+        print("Miembros de #" + room + " (" + members.length + "): " + String.join(", ", members));
+    }
+
+    private void roomMsg(String[] parts) {
+        if (parts.length < 3) {
+            print("Uso: /r <sala> <texto>");
+            return;
+        }
+        String room = roomName(parts[1]);
+        chat.sendToRoom(room, parts[2]).whenComplete((ok, error) -> {
+            if (error == null) {
+                print("[ok] enviado a #" + room);
+            } else {
+                print("[error] " + describe(error));
+            }
+        });
+    }
+
+    /** "#general" y "general" son la misma sala (las salas se muestran con #). */
+    private static String roomName(String arg) {
+        return arg.startsWith("#") ? arg.substring(1) : arg;
     }
 
     private void logout() {
@@ -156,6 +250,22 @@ public final class Cli implements ChatListener {
     public void privateMessage(TextMessage msg) {
         print("[" + TIME.format(Instant.ofEpochMilli(msg.timestamp)) + "] (privado) " + clean(msg.from) + ": "
                 + clean(msg.text));
+    }
+
+    @Override
+    public void roomMessage(TextMessage msg) {
+        print("[" + TIME.format(Instant.ofEpochMilli(msg.timestamp)) + "] #" + clean(msg.room) + " "
+                + clean(msg.from) + ": " + clean(msg.text));
+    }
+
+    @Override
+    public void memberJoinedRoom(String room, String nickname) {
+        print("* " + clean(nickname) + " se unio a #" + clean(room));
+    }
+
+    @Override
+    public void memberLeftRoom(String room, String nickname) {
+        print("* " + clean(nickname) + " salio de #" + clean(room));
     }
 
     @Override

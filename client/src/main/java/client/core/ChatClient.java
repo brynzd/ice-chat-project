@@ -1,9 +1,11 @@
 package client.core;
 
+import chat.ChatException;
 import chat.ClientCallbackPrx;
 import chat.InvalidNameException;
 import chat.LobbyPrx;
 import chat.NicknameTakenException;
+import chat.RoomInfo;
 import chat.SessionPrx;
 import com.zeroc.Ice.Connection;
 import com.zeroc.Ice.LocalException;
@@ -16,7 +18,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Logica del cliente sin interfaz: login, presencia y mensajes privados. No imprime nada;
+ * Logica del cliente sin interfaz: login, presencia, mensajes privados y salas. No imprime nada;
  * todo lo que llega del servidor se reporta al ChatListener desde un unico hilo de eventos.
  */
 public final class ChatClient {
@@ -93,13 +95,8 @@ public final class ChatClient {
         return nickname;
     }
 
-    public String[] listUsers() {
-        SessionPrx s = requireSession();
-        try {
-            return s.listUsers();
-        } catch (ObjectNotExistException e) {
-            throw sessionLost(s);
-        }
+    public String[] listUsers() throws ChatException {
+        return query(SessionPrx::listUsers);
     }
 
     /**
@@ -108,8 +105,71 @@ public final class ChatClient {
      */
     public CompletableFuture<Void> sendPrivate(String to, String text) {
         SessionPrx s = requireSession();
+        return confirmed(s, s.sendPrivateAsync(to, text));
+    }
+
+    // ---- Salas (RF-03) ----
+
+    /** Crea la sala; el creador queda dentro. */
+    public void createRoom(String name) throws ChatException {
+        run(s -> s.createRoom(name));
+    }
+
+    public void joinRoom(String name) throws ChatException {
+        run(s -> s.joinRoom(name));
+    }
+
+    public void leaveRoom(String name) throws ChatException {
+        run(s -> s.leaveRoom(name));
+    }
+
+    public RoomInfo[] listRooms() throws ChatException {
+        return query(SessionPrx::listRooms);
+    }
+
+    public String[] listMembers(String room) throws ChatException {
+        return query(s -> s.listMembers(room));
+    }
+
+    /** Asincrono, igual que sendPrivate. */
+    public CompletableFuture<Void> sendToRoom(String room, String text) {
+        SessionPrx s = requireSession();
+        return confirmed(s, s.sendToRoomAsync(room, text));
+    }
+
+    // ---- Llamadas a la sesion ----
+
+    @FunctionalInterface
+    private interface SessionQuery<T> {
+        T call(SessionPrx s) throws ChatException;
+    }
+
+    @FunctionalInterface
+    private interface SessionAction {
+        void call(SessionPrx s) throws ChatException;
+    }
+
+    /** Llamada sincronica a la sesion actual; si el servidor ya no la tiene, la olvida (ver sessionLost). */
+    private <T> T query(SessionQuery<T> op) throws ChatException {
+        SessionPrx s = requireSession();
+        try {
+            return op.call(s);
+        } catch (ObjectNotExistException e) {
+            throw sessionLost(s);
+        }
+    }
+
+    private void run(SessionAction op) throws ChatException {
+        query(s -> {
+            op.call(s);
+            return null;
+        });
+    }
+
+    /** Pasa el resultado de una llamada asincrona al hilo de eventos, traduciendo la sesion perdida. */
+    private CompletableFuture<Void> confirmed(SessionPrx s, CompletableFuture<Void> invocation) {
         CompletableFuture<Void> result = new CompletableFuture<>();
-        s.sendPrivateAsync(to, text).whenCompleteAsync((ok, error) -> {
+        invocation.whenCompleteAsync((ok, error) -> {
             if (error == null) {
                 result.complete(null);
             } else {
