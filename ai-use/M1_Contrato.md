@@ -12,6 +12,7 @@
 3. After the AI explained the file-transfer options: *"Option A, metadata sent once with FileInfo. Integrity check sounds fine with the hash. Chunk size is also fine as 64KB. Private vs room logic is sound."*
 4. *"Can you check the current code and revise it thouroughly to find any room for improvement"*
 5. *"apply the contract fixes from section 1"*
+6. *"apply the build and docs fixes from section 2"*
 
 ## Design decisions made by the team
 
@@ -38,6 +39,18 @@ Fixes for the contract gaps from "Revisions", section 1, applied by the AI (prom
 | f. Smaller points | [`Types.ice:8`](../common/src/main/slice/Types.ice#L8) `ChunkSize`; [`Types.ice:32-37`](../common/src/main/slice/Types.ice#L32-L37) `RoomInfo`; [`Server.ice:25-29`](../common/src/main/slice/Server.ice#L25-L29) `createRoom` / `joinRoom`; [`Server.ice:57-58`](../common/src/main/slice/Server.ice#L57-L58) `hangup`; [`Callbacks.ice:9`](../common/src/main/slice/Callbacks.ice#L9) presence; [`Callbacks.ice:47-48`](../common/src/main/slice/Callbacks.ice#L47-L48) `onCallEnded` | `RoomInfo.owner` replaced by `bool hasActiveCall`; `CHUNKSIZE` renamed to `ChunkSize` (not `CHUNK_SIZE`: Slice rejects underscores in identifiers); behavior rules written as comments: the creator joins the room automatically, joining a room twice does nothing, users are not notified about themselves, and `hangup` also cancels a call that is still ringing |
 
 Also updated: the "Contrato Slice" table in `README.md` (new constant and exception names).
+
+Build and docs fixes from "Revisions", section 2, applied by the AI (prompt 6). Checked: `./gradlew clean build` passes.
+
+| Item | Location | Change applied |
+|---|---|---|
+| Stale `Chat.ice` references | [`README.md:27`](../README.md#L27), [`README.md:42`](../README.md#L42) | Now refer to the `.ice` files in `src/main/slice/` |
+| Include comment | [`common/build.gradle:13`](../common/build.gradle#L13) | Matches the `#include <Types.ice>` form the files use |
+| Duplicate PDF | `Taller_Evaluativo_Chat_Ice.pdf` (root) | Deleted; the identical copy stays in `docs/` |
+| Empty version catalog | [`gradle/libs.versions.toml`](../gradle/libs.versions.toml); [`common/build.gradle:4`](../common/build.gradle#L4), [`:20`](../common/build.gradle#L20); [`README.md:13`](../README.md#L13) | The Ice runtime (3.7.11) and ice-builder plugin (1.5.2) versions now live in the catalog; `common` uses `alias(libs.plugins.ice.builder)` and `api libs.ice`; the README points to the catalog |
+| Stale Gradle docs link | [`settings.gradle:5`](../settings.gradle#L5) | Links to the 8.14.3 docs |
+| Progress bar mixed into the CLI | [`gradle.properties`](../gradle.properties); [`README.md:36-37`](../README.md#L36-L37) | `org.gradle.console=plain`; README explains it and the `-q` option |
+| Two clients at once | — | Tested: two `./gradlew runClient -q` started from the same folder ran at the same time without blocking each other |
 
 ## Revisions
 

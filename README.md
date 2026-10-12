@@ -10,7 +10,7 @@ Taller Evaluativo Unidad 2 - Computacion en Internet I (Icesi, 2026-2).
 | Herramienta | Version | Notas |
 |---|---|---|
 | JDK | **17 a 24** (recomendado Temurin 21) | `JAVA_HOME` debe apuntar a este JDK. Gradle 8.14 no corre sobre JDK 25+ |
-| ZeroC Ice | **3.7.11** | Provee `slice2java`. Debe coincidir con `com.zeroc:ice:3.7.11` en `common/build.gradle` |
+| ZeroC Ice | **3.7.11** | Provee `slice2java`. Debe coincidir con la version `ice` de `gradle/libs.versions.toml` |
 | Gradle | 8.14.3 (via wrapper) | No hace falta instalarlo; usar `./gradlew` |
 
 ### Instalacion en Windows
@@ -24,7 +24,7 @@ En Linux/macOS: instalar Ice 3.7.11 segun https://zeroc.com/downloads/ice/3.7 (o
 ### Compilar y ejecutar
 
 ```bash
-./gradlew build        # compila Chat.ice -> common/build/generated-src y todos los modulos
+./gradlew build        # compila los .ice -> common/build/generated-src y todos los modulos
 ./gradlew runServer
 ./gradlew runClient
 ```
@@ -32,11 +32,14 @@ En Linux/macOS: instalar Ice 3.7.11 segun https://zeroc.com/downloads/ice/3.7 (o
 > **Por que Gradle 8 y no 9:** el plugin oficial `com.zeroc.gradle.ice-builder.slice` (1.5.2) usa
 > `groovy.util.XmlSlurper`, que ya no existe en Gradle 9 (Groovy 4). Por la misma razon el
 > configuration cache esta desactivado en `gradle.properties`.
+>
+> **Consola:** `gradle.properties` fija `org.gradle.console=plain` para que la barra de progreso de
+> Gradle no se mezcle con la salida de la CLI. Para ocultar tambien las lineas de tareas: `./gradlew runClient -q`.
 
 ## Estructura
 
 ```
-common/   contrato Slice (src/main/slice/Chat.ice) -> clases Java generadas
+common/   contrato Slice (src/main/slice/*.ice) -> clases Java generadas
 server/   servidor Ice                       (./gradlew runServer)
 client/   cliente CLI                        (./gradlew runClient)
   client.core  logica independiente de la UI (Ice, callbacks, UDP)
