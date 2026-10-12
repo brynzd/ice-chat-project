@@ -68,7 +68,13 @@ con tilde y la `ñ` (llegan como `?`). Ejecutando el cliente con `java` directam
 | `/login <nick>` | Inicia sesion. El nickname es unico (sin distinguir mayusculas): 1 a 20 letras, numeros, `.`, `_` o `-`, sin espacios |
 | `/users` | Lista los usuarios conectados |
 | `/msg <nick> <texto>` | Envia un mensaje privado. `[ok]` confirma que el servidor lo recibio; `[error]` explica por que no (usuario inexistente, desconectado, ...) |
-| `/logout` | Cierra la sesion; el nickname queda libre |
+| `/rooms` | Lista las salas con su cantidad de miembros |
+| `/create <sala>` | Crea una sala y te une a ella. Mismas reglas que el nickname; `General` y `general` son la misma sala |
+| `/join <sala>` | Te une a una sala (puedes estar en varias a la vez) y muestra sus miembros |
+| `/leave <sala>` | Sales de la sala; los demas miembros reciben el aviso |
+| `/members <sala>` | Lista los miembros de una sala |
+| `/r <sala> <texto>` | Envia un mensaje a todos los miembros de la sala menos a ti. Solo los miembros pueden escribir y leer la sala. `#sala` y `sala` funcionan igual |
+| `/logout` | Cierra la sesion (sales de todas tus salas); el nickname queda libre |
 | `/help` | Muestra los comandos |
 | `/quit` | Cierra la sesion y sale (Ctrl+C hace lo mismo) |
 
@@ -86,6 +92,18 @@ Sesion iniciada como alice. Conectados (2): alice, bob
 /msg nadie hola
 [error] El usuario 'nadie' no existe o no esta conectado
 * carol se desconecto
+```
+
+Salas: cada mensaje muestra la hora, la sala y el remitente. Las salas no se borran al quedar vacias.
+
+```
+/create general
+Sala #general creada. Escribe en ella con /r general <texto>
+* bob se unio a #general
+/r general hola a todos
+[ok] enviado a #general
+[11:20] #general bob: hola alice
+* bob salio de #general
 ```
 
 Si un cliente se cierra de golpe (proceso terminado o red caida), el servidor lo detecta por la conexion

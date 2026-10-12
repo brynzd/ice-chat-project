@@ -44,17 +44,19 @@ final class CallbackI implements ClientCallback {
 
     @Override
     public void onRoomMessage(TextMessage msg, Current current) {
-        // M4
+        events.execute(() -> listener.roomMessage(msg));
     }
 
-    // ---- RoomListener (M4) ----
+    // ---- RoomListener (RF-03) ----
 
     @Override
     public void onMemberJoinedRoom(String room, String nickname, Current current) {
+        events.execute(() -> listener.memberJoinedRoom(room, nickname));
     }
 
     @Override
     public void onMemberLeftRoom(String room, String nickname, Current current) {
+        events.execute(() -> listener.memberLeftRoom(room, nickname));
     }
 
     // ---- FileListener (M5) ----

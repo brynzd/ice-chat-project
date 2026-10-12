@@ -20,9 +20,14 @@ public class Server {
 
             ObjectAdapter adapter = communicator.createObjectAdapter("ChatAdapter");
 
-            // Objeto bien conocido "Lobby": los clientes llegan a el con Lobby.Proxy (config.client)
             SessionManager sessions = new SessionManager(adapter);
-            adapter.add(new LobbyI(sessions), Util.stringToIdentity("Lobby"));
+            RoomManager rooms = new RoomManager(sessions);
+            // Al cerrarse una sesion (logout, conexion perdida o callback fallido) se limpia lo del usuario
+            sessions.addEndListener(rooms::leaveAll);
+
+            // Objeto bien conocido "Lobby": los clientes llegan a el con Lobby.Proxy (config.client)
+            adapter.add(new LobbyI(sessions, user -> new SessionI(user, sessions, rooms)),
+                    Util.stringToIdentity("Lobby"));
 
             adapter.activate();
             System.out.println("[server] escuchando en "

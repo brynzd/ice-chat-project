@@ -15,6 +15,13 @@ public interface ChatListener {
 
     void privateMessage(TextMessage msg);
 
+    /** Mensaje de una sala de la que el usuario es miembro (msg.room). */
+    void roomMessage(TextMessage msg);
+
+    void memberJoinedRoom(String room, String nickname);
+
+    void memberLeftRoom(String room, String nickname);
+
     /** Se perdio la conexion con el servidor sin haber hecho logout. */
     void disconnected(String reason);
 }
