@@ -43,3 +43,18 @@ client/   cliente CLI                        (./gradlew runClient)
   client.cli   interfaz de consola
 ai-use/   bitacora de uso de IA generativa
 ```
+
+## Contrato Slice
+
+Modulo `chat` (paquete Java `chat`), dividido en `common/src/main/slice/`:
+
+| Archivo | Contenido |
+|---|---|
+| `Types.ice` | Structs y secuencias: `TextMessage`, `RoomInfo`, `FileInfo`, `FileChunk`, `AudioEndpoint`, `GroupCallMember`, `GroupCallInfo`; constantes `ChunkSize` (64 KB) y formato de audio (`AudioSampleRate`, `AudioPacketBytes`, ...) |
+| `Exceptions.ice` | `ChatException` y sus subclases (`NicknameTakenException`, `InvalidNameException`, `UserNotFoundException`, `RoomNotFoundException`, `UserBusyException`, ...) |
+| `Callbacks.ice` | Lo que implementa el cliente: `PresenceListener`, `MessageListener`, `RoomListener`, `FileListener`, `CallListener`, unidas en `ClientCallback` |
+| `Server.ice` | Lo que implementa el servidor: `Lobby` (login) y `Session`, que hereda de `MessageOps`, `RoomOps`, `FileOps` y `CallOps` |
+
+Flujo: el cliente obtiene el proxy `Lobby`, llama `login(nickname, callback)` y recibe un `Session*` propio;
+todas las operaciones posteriores se hacen sobre esa sesion. Los archivos se envian con `startFileToUser/Room`
+(metadatos + SHA-256, devuelve un `transferId`) seguido de `uploadChunk` por cada bloque de 64 KB.
