@@ -74,6 +74,8 @@ con tilde y la `ñ` (llegan como `?`). Ejecutando el cliente con `java` directam
 | `/leave <sala>` | Sales de la sala; los demas miembros reciben el aviso |
 | `/members <sala>` | Lista los miembros de una sala |
 | `/r <sala> <texto>` | Envia un mensaje a todos los miembros de la sala menos a ti. Solo los miembros pueden escribir y leer la sala. `#sala` y `sala` funcionan igual |
+| `/sendfile <nick> <ruta>` | Envia un archivo (imagen, audio, pdf, ...; hasta 1 GB) a un usuario. La ruta es el resto de la linea: puede tener espacios o ir entre comillas. Con `gradlew runClient` las rutas relativas parten de `client/`, asi que conviene usar rutas absolutas |
+| `/sendfile #sala <ruta>` | Envia el archivo a todos los miembros de la sala menos a ti |
 | `/logout` | Cierra la sesion (sales de todas tus salas); el nickname queda libre |
 | `/help` | Muestra los comandos |
 | `/quit` | Cierra la sesion y sale (Ctrl+C hace lo mismo) |
@@ -105,6 +107,27 @@ Sala #general creada. Escribe en ella con /r general <texto>
 [11:20] #general bob: hola alice
 * bob salio de #general
 ```
+
+Archivos: viajan en bloques de 64 KB y el receptor los guarda en `client/downloads/<su nick>/`. Al
+terminar compara el SHA-256 con el que envio el emisor; si ya existe un archivo con ese nombre lo guarda
+como `foto (1).png`. Mientras se envia un archivo se puede seguir chateando.
+
+```
+/sendfile #general C:\Users\alice\Pictures\foto.png
+[archivo] enviando foto.png a #general...
+[ok] foto.png enviado a #general
+```
+
+En cada receptor:
+
+```
+[archivo] alice envia a #general foto.png (1.2 MB)
+[archivo] foto.png de alice guardado en C:\...\client\downloads\bob\foto.png (SHA-256 verificado)
+```
+
+Si el emisor se desconecta a mitad del envio, los receptores ven `envio cancelado` y se borra el archivo
+parcial (`.part`). Si se cae un receptor, los demas reciben el archivo igual (el `.part` del receptor
+caido queda en su carpeta).
 
 Si un cliente se cierra de golpe (proceso terminado o red caida), el servidor lo detecta por la conexion
 cerrada o por la falta de heartbeats (unos 10 s) y avisa a los demas. Si se cae el servidor, el cliente
