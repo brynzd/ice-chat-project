@@ -12,15 +12,18 @@ import java.util.concurrent.Executor;
 /**
  * Servant de callback que el servidor invoca; traduce cada llamada a un evento de ChatListener.
  * Solo encola el evento en el hilo de eventos y retorna: una interfaz lenta no frena a Ice.
+ * La excepcion son los archivos, que se escriben en disco aqui (ver FileTransfers).
  */
 final class CallbackI implements ClientCallback {
 
     private final ChatListener listener;
     private final Executor events;
+    private final FileTransfers files;
 
-    CallbackI(ChatListener listener, Executor events) {
+    CallbackI(ChatListener listener, Executor events, FileTransfers files) {
         this.listener = listener;
         this.events = events;
+        this.files = files;
     }
 
     // ---- PresenceListener (RF-01) ----
@@ -59,18 +62,23 @@ final class CallbackI implements ClientCallback {
         events.execute(() -> listener.memberLeftRoom(room, nickname));
     }
 
-    // ---- FileListener (M5) ----
+    // ---- FileListener (RF-04) ----
 
     @Override
     public void onFileStart(String transferId, String from, String room, FileInfo info, Current current) {
+        files.started(transferId, from, room, info);
     }
 
+    // Se escribe en disco en este hilo de Ice: el servidor espera esta respuesta antes de enviar
+    // el siguiente bloque, asi los bloques nunca se acumulan en memoria
     @Override
     public void onFileChunk(FileChunk chunk, Current current) {
+        files.chunk(chunk);
     }
 
     @Override
     public void onFileAborted(String transferId, String reason, Current current) {
+        files.aborted(transferId, reason);
     }
 
     // ---- CallListener (M6 / M7) ----

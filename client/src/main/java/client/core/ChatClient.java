@@ -12,6 +12,8 @@ import com.zeroc.Ice.LocalException;
 import com.zeroc.Ice.ObjectAdapter;
 import com.zeroc.Ice.ObjectNotExistException;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutorService;
@@ -19,7 +21,7 @@ import java.util.concurrent.Executors;
 import java.util.function.Supplier;
 
 /**
- * Logica del cliente sin interfaz: login, presencia, mensajes privados y salas. No imprime nada;
+ * Logica del cliente sin interfaz: login, presencia, mensajes, salas y archivos. No imprime nada;
  * todo lo que llega del servidor se reporta al ChatListener desde un unico hilo de eventos.
  */
 public final class ChatClient {
@@ -30,6 +32,7 @@ public final class ChatClient {
     private final ObjectAdapter callbackAdapter;
     private final ClientCallbackPrx callback;
     private final ChatListener listener;
+    private final FileTransfers files;
 
     // Hilo de eventos: los callbacks de Ice solo encolan aqui y retornan enseguida,
     // asi la interfaz puede tardar en imprimir sin frenar a Ice ni al servidor
@@ -50,8 +53,9 @@ public final class ChatClient {
         this.lobby = lobby;
         this.callbackAdapter = callbackAdapter;
         this.listener = listener;
+        this.files = new FileTransfers(listener, events, this::nickname);
         this.callback = ClientCallbackPrx.uncheckedCast(
-                callbackAdapter.addWithUUID(new CallbackI(listener, events)));
+                callbackAdapter.addWithUUID(new CallbackI(listener, events, files)));
     }
 
     public synchronized void login(String nick) throws NicknameTakenException, InvalidNameException {
@@ -82,6 +86,7 @@ public final class ChatClient {
             session = null;
             nickname = null;
         }
+        files.discardAll();
         if (s != null) {
             try {
                 s.logout();
@@ -139,6 +144,20 @@ public final class ChatClient {
     public CompletableFuture<Void> sendToRoom(String room, String text) {
         SessionPrx s = requireSession();
         return confirmed(s, inOrder(() -> s.sendToRoomAsync(room, text)));
+    }
+
+    // ---- Archivos (RF-04) ----
+
+    /**
+     * Envia el archivo a un nickname o a "#sala". Se completa (en el hilo de eventos) cuando todos
+     * los destinatarios recibieron el ultimo bloque.
+     */
+    public CompletableFuture<Void> sendFile(String target, Path file) {
+        SessionPrx s = requireSession();
+        if (!Files.isRegularFile(file)) {
+            throw new IllegalStateException("No existe el archivo " + file);
+        }
+        return confirmed(s, files.send(s, target, file));
     }
 
     // ---- Llamadas a la sesion ----
@@ -220,6 +239,7 @@ public final class ChatClient {
         }
         session = null;
         nickname = null;
+        files.discardAll();
         return true;
     }
 }
