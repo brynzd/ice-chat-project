@@ -12,6 +12,8 @@
 3. After the AI explained the file-transfer options: *"Option A, metadata sent once with FileInfo. Integrity check sounds fine with the hash. Chunk size is also fine as 64KB. Private vs room logic is sound."*
 4. *"Can you check the current code and revise it thouroughly to find any room for improvement"*
 5. *"apply the contract fixes from section 1"*
+6. *"apply the build and docs fixes from section 2"*
+7. *"apply the M2 points from section 3"*, then, answering the AI's questions: scope **"Infrastructure only"** (config, bootstrap and helpers; the team still codes the M2 login/presence/chat logic) and dead-client detection with **"Ice heartbeats"**.
 
 ## Design decisions made by the team
 
@@ -23,6 +25,7 @@
 | File transfer | Server relays chunks as they arrive (push). `FileInfo` metadata is sent once and returns a `transferId`. 64 KB chunks. SHA-256 hash of the whole file | Server stores the file and recipients download it (pull); full metadata in every chunk |
 | Exceptions | Base `ChatException` plus specific subclasses | One generic exception |
 | Call signaling | `AudioEndpoint` struct with request / accept / reject / hang up. For group calls, the server relay returns a `token` to put in each datagram | Identifying senders by UDP source address |
+| Dead-client detection | Ice ACM heartbeats in both directions plus a close callback on the connection the user logged in on | An idempotent `Session.ping()` called periodically by the client (needs a contract change and timers on both sides) |
 
 ## AI-generated code
 
@@ -38,6 +41,33 @@ Fixes for the contract gaps from "Revisions", section 1, applied by the AI (prom
 | f. Smaller points | [`Types.ice:8`](../common/src/main/slice/Types.ice#L8) `ChunkSize`; [`Types.ice:32-37`](../common/src/main/slice/Types.ice#L32-L37) `RoomInfo`; [`Server.ice:25-29`](../common/src/main/slice/Server.ice#L25-L29) `createRoom` / `joinRoom`; [`Server.ice:57-58`](../common/src/main/slice/Server.ice#L57-L58) `hangup`; [`Callbacks.ice:9`](../common/src/main/slice/Callbacks.ice#L9) presence; [`Callbacks.ice:47-48`](../common/src/main/slice/Callbacks.ice#L47-L48) `onCallEnded` | `RoomInfo.owner` replaced by `bool hasActiveCall`; `CHUNKSIZE` renamed to `ChunkSize` (not `CHUNK_SIZE`: Slice rejects underscores in identifiers); behavior rules written as comments: the creator joins the room automatically, joining a room twice does nothing, users are not notified about themselves, and `hangup` also cancels a call that is still ringing |
 
 Also updated: the "Contrato Slice" table in `README.md` (new constant and exception names).
+
+Build and docs fixes from "Revisions", section 2, applied by the AI (prompt 6). Checked: `./gradlew clean build` passes.
+
+| Item | Location | Change applied |
+|---|---|---|
+| Stale `Chat.ice` references | [`README.md:27`](../README.md#L27), [`README.md:42`](../README.md#L42) | Now refer to the `.ice` files in `src/main/slice/` |
+| Include comment | [`common/build.gradle:13`](../common/build.gradle#L13) | Matches the `#include <Types.ice>` form the files use |
+| Duplicate PDF | `Taller_Evaluativo_Chat_Ice.pdf` (root) | Deleted; the identical copy stays in `docs/` |
+| Empty version catalog | [`gradle/libs.versions.toml`](../gradle/libs.versions.toml); [`common/build.gradle:4`](../common/build.gradle#L4), [`:20`](../common/build.gradle#L20); [`README.md:13`](../README.md#L13) | The Ice runtime (3.7.11) and ice-builder plugin (1.5.2) versions now live in the catalog; `common` uses `alias(libs.plugins.ice.builder)` and `api libs.ice`; the README points to the catalog |
+| Stale Gradle docs link | [`settings.gradle:5`](../settings.gradle#L5) | Links to the 8.14.3 docs |
+| Progress bar mixed into the CLI | [`gradle.properties`](../gradle.properties); [`README.md:36-37`](../README.md#L36-L37) | `org.gradle.console=plain`; README explains it and the `-q` option |
+| Two clients at once | — | Tested: two `./gradlew runClient -q` started from the same folder ran at the same time without blocking each other |
+
+M2 infrastructure from "Revisions", section 3, applied by the AI (prompt 7). Only configuration, startup code and helpers; the Lobby, Session and ClientCallback servants are left to the team. Checked: `./gradlew clean build` passes; the server starts and answers on its port (`Lobby` not registered yet, as expected); `--Lobby.Proxy=...` passed through `--args` overrides the config; `FileNames.safeName` gives the expected result for `../../etc/passwd`, `C:\Windows\x.exe`, `..`, `CON.txt`, `foto<1>.png`, empty and null names.
+
+| Point | Location | Change applied |
+|---|---|---|
+| Dead-client detection | [`config.server:21-25`](../server/config.server#L21-L25), [`config.client:24-28`](../client/config.client#L24-L28); [`IceSupport.java:49`](../server/src/main/java/server/IceSupport.java#L49) `onConnectionClosed` | `Ice.ACM.Timeout=10`, `Heartbeat=3` (always), `Close=4` (close only when nothing, not even a heartbeat, arrived for 10 s) on both sides; helper that runs a cleanup when the login connection closes |
+| Deadlock risk | [`config.server:11-12`](../server/config.server#L11-L12); [`IceSupport.java:18-23`](../server/src/main/java/server/IceSupport.java#L18-L23), [`:82`](../server/src/main/java/server/IceSupport.java#L82) `whenFails` | Server thread pool of 4 to 16 threads; rules documented (callbacks with `*Async`, never while holding a lock); helper that runs cleanup when an async callback fails |
+| Message order | [`config.client:15-17`](../client/config.client#L15-L17) | `Ice.ThreadPool.Server.Serialize=1` on the client |
+| Hung clients | [`IceSupport.java:28-36`](../server/src/main/java/server/IceSupport.java#L28-L36) `withTimeout` | Callback proxies with a 5 s `ice_invocationTimeout` |
+| Large files | [`IceSupport.java:21-23`](../server/src/main/java/server/IceSupport.java#L21-L23); [`config.server:16`](../server/config.server#L16), [`config.client:20`](../client/config.client#L20) | Rule documented: `uploadChunk` forwards synchronously so the sender is slowed down; `Ice.MessageSizeMax=1024` (KB) written explicitly on both sides |
+| Wrong IP on lab machines | [`IceSupport.java:54`](../server/src/main/java/server/IceSupport.java#L54) `remoteHost`, [`:73`](../server/src/main/java/server/IceSupport.java#L73) `observedEndpoint`; [`config.client:8-11`](../client/config.client#L8-L11) | Server replaces the reported `AudioEndpoint.host` with the address it sees on the connection (kept as reported when the client connected through loopback); config comment on fixing `Callback.Endpoints` to the LAN IP |
+| Session identities | [`IceSupport.java:39`](../server/src/main/java/server/IceSupport.java#L39) `newSessionIdentity` | Random UUID identity, category `session` |
+| Received file names | [`FileNames.java:29`](../client/src/main/java/client/core/FileNames.java#L29) `safeName` | Drops any path, replaces characters Windows rejects, removes trailing dots and spaces, prefixes reserved device names (`CON`, `NUL`, ...) |
+| Startup code | [`Server.java:15-31`](../server/src/main/java/server/Server.java#L15-L31), [`Client.java:17-33`](../client/src/main/java/client/Client.java#L17-L33) | Both load their config file, accept `--Name=value` overrides, close on Ctrl+C and create their adapter (`ChatAdapter` on the server, `Callback` on the client); `TODO (M2)` marks where the servants and `login` go |
+| Docs | [`README.md:39`](../README.md#L39) | New "Configuracion y red local" section: config files, connecting to another machine, firewall note |
 
 ## Revisions
 

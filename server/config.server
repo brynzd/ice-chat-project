@@ -1,0 +1,25 @@
+# Configuracion Ice del servidor (la carga Server.java al iniciar).
+# Cualquier propiedad se puede sobrescribir al ejecutar, por ejemplo:
+#   ./gradlew runServer --args="--ChatAdapter.Endpoints='tcp -p 10001'"
+
+# Adaptador que aloja el objeto bien conocido "Lobby".
+# Sin -h escucha en todas las interfaces de la maquina.
+ChatAdapter.Endpoints=tcp -p 10000
+
+# Hilos que despachan las llamadas de los clientes. Con mas de 1 hilo no hay deadlock
+# cuando un callback llama de vuelta al servidor (servidor -> cliente -> servidor).
+Ice.ThreadPool.Server.Size=4
+Ice.ThreadPool.Server.SizeMax=16
+
+# Tamano maximo de un mensaje Ice, en KB (1 MB, el valor por defecto de Ice).
+# Un bloque de archivo (ChunkSize = 64 KB) cabe de sobra; un archivo entero grande no.
+Ice.MessageSizeMax=1024
+
+# Deteccion de clientes caidos (ACM): las dos puntas envian heartbeats siempre, y una
+# conexion que no recibe nada durante Timeout segundos se cierra. IceSupport.onConnectionClosed
+# escucha ese cierre para limpiar la sesion.
+Ice.ACM.Timeout=10
+# 3 = HeartbeatAlways
+Ice.ACM.Heartbeat=3
+# 4 = CloseOnIdleForceful: cierra solo si no llego nada (ni heartbeats) en Timeout segundos
+Ice.ACM.Close=4
