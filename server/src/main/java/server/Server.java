@@ -20,9 +20,9 @@ public class Server {
 
             ObjectAdapter adapter = communicator.createObjectAdapter("ChatAdapter");
 
-            // TODO (M2): registrar el servant del Lobby con la identidad bien conocida "Lobby":
-            //  adapter.add(new LobbyI(...), Util.stringToIdentity("Lobby"));
-            //  Ver IceSupport para callbacks, sesiones y deteccion de clientes caidos.
+            // Objeto bien conocido "Lobby": los clientes llegan a el con Lobby.Proxy (config.client)
+            SessionManager sessions = new SessionManager(adapter);
+            adapter.add(new LobbyI(sessions), Util.stringToIdentity("Lobby"));
 
             adapter.activate();
             System.out.println("[server] escuchando en "
