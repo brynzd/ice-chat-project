@@ -36,6 +36,19 @@ En Linux/macOS: instalar Ice 3.7.11 segun https://zeroc.com/downloads/ice/3.7 (o
 > **Consola:** `gradle.properties` fija `org.gradle.console=plain` para que la barra de progreso de
 > Gradle no se mezcle con la salida de la CLI. Para ocultar tambien las lineas de tareas: `./gradlew runClient -q`.
 
+### Configuracion y red local
+
+La configuracion de Ice esta en `server/config.server` y `client/config.client` (endpoints, hilos,
+`Ice.MessageSizeMax` y heartbeats para detectar clientes caidos). Cualquier propiedad se sobrescribe
+con `--Nombre=valor`. Para conectar un cliente a un servidor en otra maquina:
+
+```bash
+./gradlew runClient --args="--Lobby.Proxy='Lobby:tcp -h 192.168.1.10 -p 10000'"
+```
+
+El servidor escucha en el puerto TCP 10000 y cada cliente abre un puerto para los callbacks, asi que
+el firewall de Windows debe permitir Java en la red local.
+
 ## Estructura
 
 ```

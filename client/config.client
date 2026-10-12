@@ -1,0 +1,28 @@
+# Configuracion Ice del cliente (la carga Client.java al iniciar).
+# Cualquier propiedad se puede sobrescribir al ejecutar. Para conectarse a otra maquina:
+#   ./gradlew runClient --args="--Lobby.Proxy='Lobby:tcp -h 192.168.1.10 -p 10000'"
+
+# Proxy del objeto Lobby del servidor
+Lobby.Proxy=Lobby:tcp -h localhost -p 10000
+
+# Adaptador donde el servidor invoca los callbacks; el sistema operativo elige el puerto.
+# Sin -h publica todas las interfaces locales. En maquinas con varias tarjetas de red
+# (VirtualBox, WSL) conviene fijar la IP de la LAN: tcp -h 192.168.1.20
+Callback.Endpoints=tcp
+
+# Los callbacks de una misma conexion se despachan en orden de llegada,
+# asi los mensajes de chat no se muestran desordenados.
+Ice.ThreadPool.Server.Size=1
+Ice.ThreadPool.Server.SizeMax=4
+Ice.ThreadPool.Server.Serialize=1
+
+# Debe permitir al menos un bloque de archivo (ChunkSize = 64 KB). Valor en KB.
+Ice.MessageSizeMax=1024
+
+# Heartbeats en las dos direcciones (igual que config.server): el servidor detecta
+# si el cliente se cae y el cliente detecta si el servidor se cae.
+Ice.ACM.Timeout=10
+# 3 = HeartbeatAlways
+Ice.ACM.Heartbeat=3
+# 4 = CloseOnIdleForceful
+Ice.ACM.Close=4
