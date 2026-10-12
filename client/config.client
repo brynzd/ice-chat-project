@@ -5,16 +5,11 @@
 # Proxy del objeto Lobby del servidor
 Lobby.Proxy=Lobby:tcp -h localhost -p 10000
 
-# Adaptador donde el servidor invoca los callbacks; el sistema operativo elige el puerto.
-# Sin -h publica todas las interfaces locales. En maquinas con varias tarjetas de red
-# (VirtualBox, WSL) conviene fijar la IP de la LAN: tcp -h 192.168.1.20
-Callback.Endpoints=tcp
-
-# Los callbacks de una misma conexion se despachan en orden de llegada,
-# asi los mensajes de chat no se muestran desordenados.
-Ice.ThreadPool.Server.Size=1
-Ice.ThreadPool.Server.SizeMax=4
-Ice.ThreadPool.Server.Serialize=1
+# Los callbacks llegan por la misma conexion del login (conexion bidireccional): el cliente
+# no abre ningun puerto. Ice los despacha en el thread pool del cliente; con un solo hilo
+# llegan en orden, y client.core los pasa enseguida a su propio hilo de eventos.
+Ice.ThreadPool.Client.Size=1
+Ice.ThreadPool.Client.SizeMax=1
 
 # Debe permitir al menos un bloque de archivo (ChunkSize = 64 KB). Valor en KB.
 Ice.MessageSizeMax=1024

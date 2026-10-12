@@ -19,8 +19,9 @@ public class Client {
             // Permite sobrescribir cualquier propiedad con --Nombre=valor (p. ej. --Lobby.Proxy=...)
             communicator.getProperties().parseCommandLineOptions("", extraArgs.toArray(new String[0]));
 
-            // Adaptador donde el servidor invoca los callbacks
-            ObjectAdapter callbackAdapter = communicator.createObjectAdapter("Callback");
+            // Adaptador de los callbacks, sin endpoints: el servidor los invoca por la conexion
+            // del login (conexion bidireccional, ver ChatClient.login)
+            ObjectAdapter callbackAdapter = communicator.createObjectAdapter("");
             callbackAdapter.activate();
 
             LobbyPrx lobby = LobbyPrx.uncheckedCast(communicator.propertyToProxy("Lobby.Proxy"));

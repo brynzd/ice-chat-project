@@ -45,8 +45,4 @@ public final class UserSession {
     boolean markClosed() {
         return closed.compareAndSet(false, true);
     }
-
-    public boolean isClosed() {
-        return closed.get();
-    }
 }

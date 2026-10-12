@@ -46,8 +46,53 @@ con `--Nombre=valor`. Para conectar un cliente a un servidor en otra maquina:
 ./gradlew runClient --args="--Lobby.Proxy='Lobby:tcp -h 192.168.1.10 -p 10000'"
 ```
 
-El servidor escucha en el puerto TCP 10000 y cada cliente abre un puerto para los callbacks, asi que
-el firewall de Windows debe permitir Java en la red local.
+Solo el servidor abre un puerto (TCP 10000), asi que solo en su maquina el firewall de Windows debe
+permitir Java en la red local. Los clientes reciben los callbacks por la misma conexion del login
+(conexion bidireccional de Ice) y no abren puertos.
+
+## Manual de usuario (CLI)
+
+Iniciar el servidor una vez y un cliente por usuario, cada uno en su propia terminal:
+
+```bash
+./gradlew runServer
+./gradlew runClient -q
+```
+
+**Acentos en Windows:** Gradle reenvia la entrada y la salida del cliente en UTF-8. Antes de
+`./gradlew runClient`, poner la terminal en UTF-8 con `chcp 65001`; si no, Gradle pierde las letras
+con tilde y la `ñ` (llegan como `?`). Ejecutando el cliente con `java` directamente no hace falta.
+
+| Comando | Descripcion |
+|---|---|
+| `/login <nick>` | Inicia sesion. El nickname es unico (sin distinguir mayusculas): 1 a 20 letras, numeros, `.`, `_` o `-`, sin espacios |
+| `/users` | Lista los usuarios conectados |
+| `/msg <nick> <texto>` | Envia un mensaje privado. `[ok]` confirma que el servidor lo recibio; `[error]` explica por que no (usuario inexistente, desconectado, ...) |
+| `/logout` | Cierra la sesion; el nickname queda libre |
+| `/help` | Muestra los comandos |
+| `/quit` | Cierra la sesion y sale (Ctrl+C hace lo mismo) |
+
+Antes de `/login` solo funcionan `/login`, `/help` y `/quit`. Los eventos del servidor aparecen en cuanto
+llegan, sin bloquear la escritura de comandos:
+
+```
+Chat Ice. Escribe /help para ver los comandos.
+/login alice
+Sesion iniciada como alice. Conectados (2): alice, bob
+* carol se conecto
+/msg bob hola bob
+[ok] enviado a bob
+[11:15] (privado) bob: hola alice
+/msg nadie hola
+[error] El usuario 'nadie' no existe o no esta conectado
+* carol se desconecto
+```
+
+Si un cliente se cierra de golpe (proceso terminado o red caida), el servidor lo detecta por la conexion
+cerrada o por la falta de heartbeats (unos 10 s) y avisa a los demas. Si se cae el servidor, el cliente
+muestra `[error] Se perdio la conexion con el servidor` y permite volver a hacer `/login`. Si el servidor
+cierra la sesion de un cliente que no respondio a tiempo, el cliente lo informa en el siguiente comando
+(`El servidor cerro tu sesion`) y tambien permite volver a hacer `/login`.
 
 ## Estructura
 

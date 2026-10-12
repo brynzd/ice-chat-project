@@ -10,21 +10,34 @@ import com.zeroc.Ice.OperationNotExistException;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.PrintStream;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.concurrent.CompletionException;
+import java.util.regex.Pattern;
 
 /**
  * Interfaz de consola. El hilo principal lee comandos; los eventos del servidor llegan
- * en hilos de Ice. Ambos imprimen con print(), que esta sincronizado, asi las lineas
- * nunca se mezclan.
+ * en el hilo de eventos de client.core. Ambos imprimen con print(), que esta sincronizado,
+ * asi las lineas nunca se mezclan.
  */
 public final class Cli implements ChatListener {
 
+    // Con consola (java directo) se usa su codificacion, p. ej. cp850 en Windows. Sin consola
+    // (gradlew runClient o tuberias) se usa UTF-8: es lo que Gradle reenvia sin perder
+    // caracteres; en Windows la terminal debe estar en UTF-8 (chcp 65001) para ver los acentos.
+    private static final Charset CHARSET =
+            System.console() != null ? System.console().charset() : StandardCharsets.UTF_8;
+    private static final PrintStream OUT = new PrintStream(System.out, true, CHARSET);
+
     private static final DateTimeFormatter TIME =
             DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault());
+
+    // Caracteres de control C0, DEL y C1 (incluye ESC, que inicia las secuencias de la terminal)
+    private static final Pattern CONTROL = Pattern.compile("[\\p{Cntrl}\\x{80}-\\x{9F}]");
 
     private static final String HELP = String.join(System.lineSeparator(),
             "Comandos:",
@@ -40,7 +53,7 @@ public final class Cli implements ChatListener {
     public void run(ChatClient chat) {
         this.chat = chat;
         print("Chat Ice. Escribe /help para ver los comandos.");
-        BufferedReader in = new BufferedReader(new InputStreamReader(System.in, Charset.defaultCharset()));
+        BufferedReader in = new BufferedReader(new InputStreamReader(System.in, CHARSET));
         try {
             String line;
             while ((line = in.readLine()) != null) {
@@ -111,7 +124,7 @@ public final class Cli implements ChatListener {
         String to = parts[1];
         chat.sendPrivate(to, parts[2]).whenComplete((ok, error) -> {
             if (error == null) {
-                print("[ok] entregado a " + to);
+                print("[ok] enviado a " + to);
             } else {
                 print("[error] " + describe(error));
             }
@@ -141,7 +154,8 @@ public final class Cli implements ChatListener {
 
     @Override
     public void privateMessage(TextMessage msg) {
-        print("[" + TIME.format(Instant.ofEpochMilli(msg.timestamp)) + "] (privado) " + msg.from + ": " + msg.text);
+        print("[" + TIME.format(Instant.ofEpochMilli(msg.timestamp)) + "] (privado) " + clean(msg.from) + ": "
+                + clean(msg.text));
     }
 
     @Override
@@ -150,7 +164,15 @@ public final class Cli implements ChatListener {
     }
 
     private static synchronized void print(String text) {
-        System.out.println(text);
+        OUT.println(text);
+    }
+
+    /**
+     * Texto recibido de otro usuario, sin caracteres de control: un salto de linea o una
+     * secuencia de escape podria falsificar lineas como "[ok] ..." o "* x se desconecto".
+     */
+    private static String clean(String text) {
+        return CONTROL.matcher(text).replaceAll(" ");
     }
 
     private static String describe(Throwable error) {
@@ -159,6 +181,9 @@ public final class Cli implements ChatListener {
         }
         if (error instanceof ChatException e) {
             return e.reason;
+        }
+        if (error instanceof IllegalStateException) {
+            return error.getMessage();
         }
         if (error instanceof OperationNotExistException) {
             return "Esta operacion aun no esta disponible en el servidor";

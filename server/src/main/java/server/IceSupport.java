@@ -30,9 +30,13 @@ public final class IceSupport {
     private IceSupport() {
     }
 
-    /** Proxy de callback con timeout: un cliente colgado no bloquea al servidor. */
-    public static ClientCallbackPrx withTimeout(ClientCallbackPrx callback) {
-        return callback.ice_invocationTimeout(CALLBACK_TIMEOUT_MS);
+    /**
+     * Proxy de callback que usa la conexion por la que llego la llamada (conexion bidireccional:
+     * el servidor no abre otra conexion hacia el cliente, asi que no importan su firewall ni sus IPs)
+     * y con timeout, para que un cliente colgado no bloquee al servidor.
+     */
+    public static ClientCallbackPrx callbackOn(ClientCallbackPrx callback, Current current) {
+        return callback.ice_fixed(current.con).ice_invocationTimeout(CALLBACK_TIMEOUT_MS);
     }
 
     /** Identidad aleatoria para el Session de cada usuario, para que nadie pueda adivinarla. */

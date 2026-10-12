@@ -39,20 +39,30 @@ public final class SessionManager {
             throw new InvalidNameException("Falta el proxy de callback");
         }
 
-        UserSession user = new UserSession(nickname, IceSupport.withTimeout(callback),
+        UserSession user = new UserSession(nickname, IceSupport.callbackOn(callback, current),
                 IceSupport.newSessionIdentity(), current.con);
         // putIfAbsent es atomico: si dos clientes piden el mismo nickname a la vez, solo uno lo obtiene
         if (users.putIfAbsent(Names.key(nickname), user) != null) {
             throw new NicknameTakenException("El nickname '" + nickname + "' ya esta en uso");
         }
 
-        SessionPrx session = SessionPrx.uncheckedCast(adapter.add(new SessionI(user, this), user.identity()));
-        // Cierre de la conexion (salida del cliente o perdida de heartbeats) = fin de la sesion
-        Connection connection = current.con;
-        IceSupport.onConnectionClosed(current, () -> closeAllOn(connection, "conexion perdida"));
+        SessionPrx session;
+        try {
+            session = SessionPrx.uncheckedCast(adapter.add(new SessionI(user, this), user.identity()));
+        } catch (RuntimeException e) {
+            // p. ej. el servidor se esta cerrando: no dejar el nickname ocupado por un usuario fantasma
+            users.remove(Names.key(nickname), user);
+            throw e;
+        }
 
         System.out.println("[server] " + nickname + " conectado");
         notifyOthers(user, cb -> cb.onUserJoinedAsync(nickname));
+
+        // Cierre de la conexion (salida del cliente o perdida de heartbeats) = fin de la sesion.
+        // Se registra despues del aviso "se conecto": si la conexion ya se cerro, Ice ejecuta
+        // el callback enseguida y los demas ven "se desconecto" despues, no antes.
+        Connection connection = current.con;
+        IceSupport.onConnectionClosed(current, () -> closeAllOn(connection, "conexion perdida"));
         return session;
     }
 

@@ -7,32 +7,39 @@ import chat.FileInfo;
 import chat.TextMessage;
 import com.zeroc.Ice.Current;
 
-/** Servant de callback que el servidor invoca; traduce cada llamada a un evento de ChatListener. */
+import java.util.concurrent.Executor;
+
+/**
+ * Servant de callback que el servidor invoca; traduce cada llamada a un evento de ChatListener.
+ * Solo encola el evento en el hilo de eventos y retorna: una interfaz lenta no frena a Ice.
+ */
 final class CallbackI implements ClientCallback {
 
     private final ChatListener listener;
+    private final Executor events;
 
-    CallbackI(ChatListener listener) {
+    CallbackI(ChatListener listener, Executor events) {
         this.listener = listener;
+        this.events = events;
     }
 
     // ---- PresenceListener (RF-01) ----
 
     @Override
     public void onUserJoined(String nickname, Current current) {
-        listener.userJoined(nickname);
+        events.execute(() -> listener.userJoined(nickname));
     }
 
     @Override
     public void onUserLeft(String nickname, Current current) {
-        listener.userLeft(nickname);
+        events.execute(() -> listener.userLeft(nickname));
     }
 
     // ---- MessageListener (RF-02 / RF-03) ----
 
     @Override
     public void onPrivateMessage(TextMessage msg, Current current) {
-        listener.privateMessage(msg);
+        events.execute(() -> listener.privateMessage(msg));
     }
 
     @Override

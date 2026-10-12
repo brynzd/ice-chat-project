@@ -4,7 +4,8 @@ import chat.TextMessage;
 
 /**
  * Eventos que client.core reporta a la interfaz (CLI hoy, JavaFX en el futuro).
- * Se invocan desde hilos de Ice: la implementacion no debe bloquear.
+ * Se invocan en orden desde un unico hilo de eventos de client.core (no desde hilos de Ice),
+ * asi que la implementacion puede tardar, por ejemplo al imprimir, sin frenar a Ice.
  */
 public interface ChatListener {
 
