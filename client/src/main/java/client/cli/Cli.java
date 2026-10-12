@@ -14,6 +14,8 @@ import java.io.InputStreamReader;
 import java.io.PrintStream;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.InvalidPathException;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -42,18 +44,19 @@ public final class Cli implements ChatListener {
 
     private static final String HELP = String.join(System.lineSeparator(),
             "Comandos:",
-            "  /login <nick>        iniciar sesion",
-            "  /users               ver usuarios conectados",
-            "  /msg <nick> <texto>  mensaje privado",
-            "  /rooms               ver las salas",
-            "  /create <sala>       crear una sala (quedas dentro)",
-            "  /join <sala>         unirse a una sala",
-            "  /leave <sala>        salir de una sala",
-            "  /members <sala>      ver los miembros de una sala",
-            "  /r <sala> <texto>    mensaje a una sala",
-            "  /logout              cerrar sesion",
-            "  /help                esta ayuda",
-            "  /quit                salir");
+            "  /login <nick>                  iniciar sesion",
+            "  /users                         ver usuarios conectados",
+            "  /msg <nick> <texto>            mensaje privado",
+            "  /rooms                         ver las salas",
+            "  /create <sala>                 crear una sala (quedas dentro)",
+            "  /join <sala>                   unirse a una sala",
+            "  /leave <sala>                  salir de una sala",
+            "  /members <sala>                ver los miembros de una sala",
+            "  /r <sala> <texto>              mensaje a una sala",
+            "  /sendfile <nick|#sala> <ruta>  enviar un archivo (se guarda en downloads/<nick>/)",
+            "  /logout                        cerrar sesion",
+            "  /help                          esta ayuda",
+            "  /quit                          salir");
 
     private ChatClient chat;
 
@@ -100,6 +103,7 @@ public final class Cli implements ChatListener {
                 case "/leave" -> leave(parts);
                 case "/members" -> members(parts);
                 case "/r" -> roomMsg(parts);
+                case "/sendfile" -> sendFile(parts);
                 case "/logout" -> logout();
                 default -> print("Comando desconocido: " + parts[0] + " (/help para ver los comandos)");
             }
@@ -225,6 +229,47 @@ public final class Cli implements ChatListener {
         return arg.startsWith("#") ? arg.substring(1) : arg;
     }
 
+    // ---- Archivos ----
+
+    private void sendFile(String[] parts) {
+        if (parts.length < 3) {
+            print("Uso: /sendfile <nick|#sala> <ruta>");
+            return;
+        }
+        String target = parts[1];
+        Path file;
+        try {
+            file = Path.of(unquote(parts[2])).toAbsolutePath(); // la ruta es el resto de la linea
+        } catch (InvalidPathException e) {
+            print("[error] Ruta invalida: " + parts[2]);
+            return;
+        }
+        String name = file.getFileName().toString();
+        chat.sendFile(target, file).whenComplete((ok, error) -> {
+            if (error == null) {
+                print("[ok] " + name + " enviado a " + target);
+            } else {
+                print("[error] " + name + ": " + describe(error));
+            }
+        });
+        print("[archivo] enviando " + name + " a " + target + "...");
+    }
+
+    /** Permite rutas entre comillas, por ejemplo con espacios. */
+    private static String unquote(String text) {
+        return text.length() >= 2 && text.startsWith("\"") && text.endsWith("\"")
+                ? text.substring(1, text.length() - 1) : text;
+    }
+
+    private static String formatSize(long bytes) {
+        if (bytes < 1024) {
+            return bytes + " B";
+        }
+        return bytes < 1024 * 1024
+                ? String.format("%.1f KB", bytes / 1024.0)
+                : String.format("%.1f MB", bytes / (1024.0 * 1024));
+    }
+
     private void logout() {
         if (!chat.isLoggedIn()) {
             print("No hay una sesion abierta");
@@ -269,6 +314,28 @@ public final class Cli implements ChatListener {
     }
 
     @Override
+    public void fileIncoming(String from, String room, String fileName, long size) {
+        String to = room.isEmpty() ? "te envia " : "envia a #" + clean(room) + " ";
+        print("[archivo] " + clean(from) + " " + to + clean(fileName) + " (" + formatSize(size) + ")");
+    }
+
+    @Override
+    public void fileProgress(String fileName, int percent) {
+        print("[archivo] " + clean(fileName) + ": " + percent + "%");
+    }
+
+    @Override
+    public void fileReceived(String from, String room, Path file) {
+        print("[archivo] " + clean(file.getFileName().toString()) + " de " + clean(from) + " guardado en "
+                + file.toAbsolutePath() + " (SHA-256 verificado)");
+    }
+
+    @Override
+    public void fileFailed(String fileName, String reason) {
+        print("[archivo] " + clean(fileName) + ": " + reason);
+    }
+
+    @Override
     public void disconnected(String reason) {
         print("[error] " + reason + ". Usa /login <nick> para volver a entrar.");
     }
@@ -294,6 +361,9 @@ public final class Cli implements ChatListener {
         }
         if (error instanceof IllegalStateException) {
             return error.getMessage();
+        }
+        if (error instanceof IOException) {
+            return "no se pudo leer el archivo (" + error.getMessage() + ")";
         }
         if (error instanceof OperationNotExistException) {
             return "Esta operacion aun no esta disponible en el servidor";

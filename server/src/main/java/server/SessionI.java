@@ -11,6 +11,7 @@ import chat.RoomInfo;
 import chat.RoomNotFoundException;
 import chat.Session;
 import chat.TextMessage;
+import chat.TransferException;
 import chat.UserNotFoundException;
 import com.zeroc.Ice.Current;
 import com.zeroc.Ice.OperationNotExistException;
@@ -21,11 +22,13 @@ public final class SessionI implements Session {
     private final UserSession user;
     private final SessionManager sessions;
     private final RoomManager rooms;
+    private final FileTransfers files;
 
-    public SessionI(UserSession user, SessionManager sessions, RoomManager rooms) {
+    public SessionI(UserSession user, SessionManager sessions, RoomManager rooms, FileTransfers files) {
         this.user = user;
         this.sessions = sessions;
         this.rooms = rooms;
+        this.files = files;
     }
 
     @Override
@@ -87,26 +90,28 @@ public final class SessionI implements Session {
         rooms.send(user, name, text);
     }
 
-    // ---- FileOps (M5) ----
+    // ---- FileOps (RF-04) ----
 
     @Override
-    public String startFileToUser(String to, FileInfo info, Current current) {
-        throw notYet(current);
+    public String startFileToUser(String to, FileInfo info, Current current)
+            throws UserNotFoundException, InvalidNameException, TransferException {
+        return files.startToUser(user, to, info);
     }
 
     @Override
-    public String startFileToRoom(String room, FileInfo info, Current current) {
-        throw notYet(current);
+    public String startFileToRoom(String room, FileInfo info, Current current)
+            throws RoomNotFoundException, NotInRoomException, InvalidNameException, TransferException {
+        return files.startToRoom(user, room, info);
     }
 
     @Override
-    public void uploadChunk(FileChunk chunk, Current current) {
-        throw notYet(current);
+    public void uploadChunk(FileChunk chunk, Current current) throws TransferException {
+        files.upload(user, chunk);
     }
 
     @Override
-    public void cancelTransfer(String transferId, Current current) {
-        throw notYet(current);
+    public void cancelTransfer(String transferId, Current current) throws TransferException {
+        files.cancel(user, transferId);
     }
 
     // ---- CallOps (M6 / M7) ----

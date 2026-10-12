@@ -79,9 +79,84 @@
 
 *(Student review of M4; to be filled in by the student.)*
 
+### Follow-up: message order (review finding)
+
+- One real issue came back (low severity): two `/r` or `/msg` lines pasted at once could arrive swapped.
+  - Cause: the server dispatches requests from one connection on several threads. In `ConnectionI.message`, Ice frees the connection for the next read before dispatching.
+- **Rejected fix:** `Ice.ThreadPool.Server.Serialize=1`. Uploads in M5 wait for the receivers, so two users sending each other files would block each other.
+- **Applied fix:** `ChatClient.inOrder` starts each send only after the previous one gets its reply. About 6 lines, client only.
+- Prompt: *"committed and merged, do the fix and then we'll move on to M5."*
+- Verified: 40 room messages and 40 private messages pasted in one burst arrived in order, each with its `[ok]`.
+
+## M5: file transfer (RF-04)
+
+### Design decisions
+
+| Decision | Choice | Why |
+|---|---|---|
+| Who stores the file | Nobody in the middle: the server relays each chunk and keeps only the transfer metadata | An 80 MB (or 600 MB) file never sits in server memory |
+| Flow control | `uploadChunk` sends the chunk to every recipient at once (`*Async`) and waits for all of them (`allOf().join()`) before returning. The client sends chunks one at a time | The sender can't go faster than the slowest live receiver, so nothing piles up anywhere. One slow receiver doesn't delay the others' delivery of the same chunk |
+| Where the receiver writes | In the Ice thread that delivers `onFileChunk`, at `index * chunkSize`, into a `.part` file | The server waits for that reply, so the backpressure reaches the disk. Queueing chunks on the events thread would remove the backpressure and let chunks pile up in client memory |
+| Integrity | SHA-256 of the whole file in `FileInfo`. The receiver checks size and hash before renaming `.part` to the final name | RF-04 asks for reconstruction without corruption or truncation. A bad file is discarded, never shown as received |
+| Validation on the server | File name without path or control characters (`InvalidNameException`). Size ≤ 1 GB, `chunkSize == ChunkSize`, `totalChunks == ceil(size / chunkSize)`, hex SHA-256. Each chunk must come from the sender, in order and with the exact length (`TransferException`) | Never trust what the client sends. Also catches a client bug at the first bad chunk |
+| Room recipients | Members at the moment the transfer starts, excluding the sender | Someone joining halfway would get a file without its start. An empty room is an error |
+| A recipient fails | Dropped from the transfer (and its session ends via `SessionManager.send`). The others keep receiving. If nobody is left, `TransferException` | One dead client can't stop the transfer for everyone |
+| The sender disconnects | Session-end hook: its transfers are aborted, recipients get `onFileAborted` and delete the `.part`. The sender's client also calls `cancelTransfer` if reading the file fails | No half-written files left behind as if they were complete |
+| Where files go | `client/downloads/<my nick>/`, with `FileNames.safeName` and a free name (`foto (1).png`) | Two clients on one PC share `client/` as working directory. Received names can't escape the folder or overwrite files |
+| Sending in the background | One `file-upload` thread; several `/sendfile` commands queue up in order | The CLI and chat keep working during an upload (verified) |
+| Empty file | Not registered on the server; complete as soon as `onFileStart` arrives | As the contract comment says (`totalChunks = 0`) |
+| Not done (simplicity) | No `/cancel` command, no resuming | Agreed cuts. `cancelTransfer` is used internally when reading the file fails |
+
+### AI-generated code
+
+| File | Content |
+|---|---|
+| `server/.../FileTransfers.java` (new) | Transfer registry, validation, chunk relay with waiting, cancel, session-end hook |
+| `server/.../SessionI.java`, `Server.java`, `IceSupport.java` | `FileOps` operations, wiring and hook registration (files before rooms), comment update |
+| `client/.../FileTransfers.java` (new) | Upload thread (SHA-256, start, chunks, progress) and receiving (`.part`, positional writes, verify, rename, discard) |
+| `client/.../Hashes.java` (new) | Streaming SHA-256 |
+| `client/.../ChatClient.java` | `sendFile`. Logout and lost session discard partial files |
+| `client/.../CallbackI.java`, `ChatListener.java`, `Cli.java` | File callbacks and events; `/sendfile <nick\|#sala> <ruta>` |
+| `README.md` | `/sendfile` in the manual, with examples and failure behavior |
+
+### How it was verified
+
+- `./gradlew build` passes.
+- Scripted run with 3 clients (alice sends; bob and carol in `#general`):
+
+| File | Sent to |
+|---|---|
+| .png with spaces in its name (300 KB) | bob |
+| .pdf (the assignment, 187 KB) | bob |
+| .wav (3 s tone) | `#general` |
+| empty file | `#general` |
+| exact multiple of 64 KB | bob |
+| 80 MB of random data | bob, then `#general` |
+
+- Every received file has the same SHA-256 as the original (checked with `sha256sum`), and a repeated name was saved as `big (1).bin`.
+- A room message sent during the 80 MB uploads arrived normally.
+- Errors checked: unknown user, sending to yourself, unknown room, missing local file.
+- Killing the sender while bob and carol each had about 78 MB of a 600 MB file:
+  - both saw "envio cancelado (alice se desconecto)";
+  - their `.part` files were deleted;
+  - the server logged the abort.
+- Killing one receiver mid-transfer: bob still got the full 600 MB with a matching hash, and alice got `[ok]`.
+- Speed on localhost: about 600 MB in 1.5 s.
+
+### Revisions
+
+*(Student review of M5; to be filled in by the student.)*
+
 ## Lessons
 
 - An undeclared user exception thrown by a servant does not reach the client as itself. The client only sees `UnknownUserException`, so the server must map errors to the exceptions each operation declares.
 - "Add, then re-check" is enough to close a race against a cleanup that runs once:
   - if the cleanup already ran, the re-check sees the session closed and undoes the add;
   - if it hasn't run yet, it will see the new member and remove it.
+- Ice dispatches requests from one connection in parallel when the server pool has more than one thread. Order between two calls is only guaranteed if the client waits for the first reply.
+- Backpressure only works if every step waits:
+  - the sender waits for `uploadChunk`;
+  - the server waits for the receivers;
+  - the receiver writes to disk before replying.
+  - If any step only queues the work, memory fills up instead.
+- A test that kills a process "in the middle of a transfer" must wait for evidence that the transfer started, such as the `.part` file appearing, and not for a fixed time. On localhost an 80 MB file finished before the fixed-time kill.
