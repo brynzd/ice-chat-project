@@ -22,11 +22,13 @@ public class Server {
 
             SessionManager sessions = new SessionManager(adapter);
             RoomManager rooms = new RoomManager(sessions);
+            FileTransfers files = new FileTransfers(sessions, rooms);
             // Al cerrarse una sesion (logout, conexion perdida o callback fallido) se limpia lo del usuario
+            sessions.addEndListener(files::endedSession);
             sessions.addEndListener(rooms::leaveAll);
 
             // Objeto bien conocido "Lobby": los clientes llegan a el con Lobby.Proxy (config.client)
-            adapter.add(new LobbyI(sessions, user -> new SessionI(user, sessions, rooms)),
+            adapter.add(new LobbyI(sessions, user -> new SessionI(user, sessions, rooms, files)),
                     Util.stringToIdentity("Lobby"));
 
             adapter.activate();

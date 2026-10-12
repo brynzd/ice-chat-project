@@ -18,9 +18,9 @@ import java.util.concurrent.CompletableFuture;
  * Reglas para todo el servidor:
  * - Invocar los callbacks con los metodos *Async (p. ej. onPrivateMessageAsync) y nunca
  *   mientras se tiene un lock: un cliente lento no debe frenar a los demas.
- * - uploadChunk reenvia cada bloque de forma sincronica: el emisor no envia el siguiente
- *   bloque hasta que los destinatarios recibieron el anterior, asi un archivo grande no
- *   se acumula en la memoria del servidor.
+ * - uploadChunk espera a que los destinatarios reciban cada bloque antes de responder: el
+ *   emisor no envia el siguiente bloque hasta entonces, asi un archivo grande no se acumula
+ *   en la memoria del servidor (ver FileTransfers).
  */
 public final class IceSupport {
 
