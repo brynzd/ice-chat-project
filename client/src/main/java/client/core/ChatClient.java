@@ -16,6 +16,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.function.Supplier;
 
 /**
  * Logica del cliente sin interfaz: login, presencia, mensajes privados y salas. No imprime nada;
@@ -37,6 +38,9 @@ public final class ChatClient {
         t.setDaemon(true);
         return t;
     });
+
+    // Ultimo mensaje enviado (ver inOrder)
+    private CompletableFuture<?> lastSend = CompletableFuture.completedFuture(null);
 
     // null si no hay sesion. volatile: lo leen tambien los hilos de Ice (close callback)
     private volatile SessionPrx session;
@@ -105,7 +109,7 @@ public final class ChatClient {
      */
     public CompletableFuture<Void> sendPrivate(String to, String text) {
         SessionPrx s = requireSession();
-        return confirmed(s, s.sendPrivateAsync(to, text));
+        return confirmed(s, inOrder(() -> s.sendPrivateAsync(to, text)));
     }
 
     // ---- Salas (RF-03) ----
@@ -134,7 +138,7 @@ public final class ChatClient {
     /** Asincrono, igual que sendPrivate. */
     public CompletableFuture<Void> sendToRoom(String room, String text) {
         SessionPrx s = requireSession();
-        return confirmed(s, s.sendToRoomAsync(room, text));
+        return confirmed(s, inOrder(() -> s.sendToRoomAsync(room, text)));
     }
 
     // ---- Llamadas a la sesion ----
@@ -164,6 +168,17 @@ public final class ChatClient {
             op.call(s);
             return null;
         });
+    }
+
+    /**
+     * Envia el mensaje cuando el anterior ya tuvo respuesta (con o sin error). El servidor despacha
+     * en paralelo las llamadas de una misma conexion, asi que dos mensajes enviados seguidos (p. ej.
+     * varias lineas pegadas a la vez) podrian llegar en otro orden.
+     */
+    private synchronized CompletableFuture<Void> inOrder(Supplier<CompletableFuture<Void>> send) {
+        CompletableFuture<Void> next = lastSend.handle((ok, error) -> null).thenCompose(ignored -> send.get());
+        lastSend = next;
+        return next;
     }
 
     /** Pasa el resultado de una llamada asincrona al hilo de eventos, traduciendo la sesion perdida. */
