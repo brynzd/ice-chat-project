@@ -3,6 +3,7 @@ package server;
 import chat.ClientCallbackPrx;
 import chat.InvalidNameException;
 import chat.NicknameTakenException;
+import chat.Session;
 import chat.SessionPrx;
 import com.zeroc.Ice.Connection;
 import com.zeroc.Ice.Current;
@@ -16,23 +17,40 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Consumer;
 import java.util.function.Function;
 
 /**
- * Usuarios conectados. Es el unico estado compartido de M2: lo usan todos los hilos del
- * servidor, por eso es un ConcurrentHashMap y ninguna operacion invoca callbacks dentro de un lock.
+ * Usuarios conectados. Lo usan todos los hilos del servidor, por eso es un ConcurrentHashMap
+ * y ninguna operacion invoca callbacks dentro de un lock.
  */
 public final class SessionManager {
 
+    /** Invocacion asincrona de un callback, p. ej. cb -> cb.onUserJoinedAsync(nick). */
+    @FunctionalInterface
+    public interface Callback {
+        CompletableFuture<?> invoke(ClientCallbackPrx cb);
+    }
+
     // clave: Names.key(nickname)
     private final ConcurrentMap<String, UserSession> users = new ConcurrentHashMap<>();
+    // Limpieza de salas, archivos y llamadas al cerrarse una sesion (se registran en Server.main)
+    private final List<Consumer<UserSession>> endListeners = new CopyOnWriteArrayList<>();
     private final ObjectAdapter adapter;
 
     public SessionManager(ObjectAdapter adapter) {
         this.adapter = adapter;
     }
 
-    public SessionPrx login(String nickname, ClientCallbackPrx callback, Current current)
+    /** Ejecuta listener con el usuario cada vez que se cierra una sesion. */
+    public void addEndListener(Consumer<UserSession> listener) {
+        endListeners.add(listener);
+    }
+
+    /** servantFor crea el servant Session del usuario (lo arma Server.main con todos los servicios). */
+    public SessionPrx login(String nickname, ClientCallbackPrx callback, Current current,
+                            Function<UserSession, Session> servantFor)
             throws NicknameTakenException, InvalidNameException {
         Names.validate(nickname, "Nickname");
         if (callback == null) {
@@ -48,7 +66,7 @@ public final class SessionManager {
 
         SessionPrx session;
         try {
-            session = SessionPrx.uncheckedCast(adapter.add(new SessionI(user, this), user.identity()));
+            session = SessionPrx.uncheckedCast(adapter.add(servantFor.apply(user), user.identity()));
         } catch (RuntimeException e) {
             // p. ej. el servidor se esta cerrando: no dejar el nickname ocupado por un usuario fantasma
             users.remove(Names.key(nickname), user);
@@ -82,6 +100,14 @@ public final class SessionManager {
             // ya no estaba registrado
         }
         System.out.println("[server] " + user.nickname() + " desconectado (" + reason + ")");
+        // Primero se libera lo del usuario (llamadas, archivos, salas) y luego se avisa que se fue
+        for (Consumer<UserSession> listener : endListeners) {
+            try {
+                listener.accept(user);
+            } catch (RuntimeException e) {
+                System.out.println("[server] error limpiando la sesion de " + user.nickname() + ": " + e);
+            }
+        }
         notifyOthers(user, cb -> cb.onUserLeftAsync(user.nickname()));
     }
 
@@ -111,14 +137,16 @@ public final class SessionManager {
 
     /**
      * Invoca un callback asincrono sobre un usuario. Si falla (cliente caido o timeout)
-     * se cierra su sesion.
+     * se cierra su sesion. Devuelve la invocacion por si hay que esperarla.
      */
-    public void send(UserSession target, Function<ClientCallbackPrx, CompletableFuture<?>> call) {
-        IceSupport.whenFails(call.apply(target.callback()), () -> end(target, "no responde"));
+    public CompletableFuture<?> send(UserSession target, Callback call) {
+        CompletableFuture<?> invocation = call.invoke(target.callback());
+        IceSupport.whenFails(invocation, () -> end(target, "no responde"));
+        return invocation;
     }
 
     /** Envia el callback a todos los usuarios conectados menos a except. */
-    public void notifyOthers(UserSession except, Function<ClientCallbackPrx, CompletableFuture<?>> call) {
+    public void notifyOthers(UserSession except, Callback call) {
         for (UserSession user : users.values()) {
             if (user != except) {
                 send(user, call);

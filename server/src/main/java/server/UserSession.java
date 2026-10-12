@@ -26,7 +26,7 @@ public final class UserSession {
         return nickname;
     }
 
-    /** Proxy de callback con timeout (ver IceSupport.withTimeout). */
+    /** Proxy de callback fijado a la conexion del login y con timeout (ver IceSupport.callbackOn). */
     public ClientCallbackPrx callback() {
         return callback;
     }
@@ -39,6 +39,11 @@ public final class UserSession {
     /** Conexion por la que el usuario hizo login. */
     public Connection connection() {
         return connection;
+    }
+
+    /** true si la sesion ya se cerro (logout, conexion perdida o callback fallido). */
+    public boolean isClosed() {
+        return closed.get();
     }
 
     /** Marca la sesion como cerrada; devuelve true solo la primera vez. */

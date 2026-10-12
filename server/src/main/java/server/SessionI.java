@@ -4,7 +4,11 @@ import chat.AudioEndpoint;
 import chat.FileChunk;
 import chat.FileInfo;
 import chat.GroupCallInfo;
+import chat.InvalidNameException;
+import chat.NotInRoomException;
+import chat.RoomAlreadyExistsException;
 import chat.RoomInfo;
+import chat.RoomNotFoundException;
 import chat.Session;
 import chat.TextMessage;
 import chat.UserNotFoundException;
@@ -16,10 +20,12 @@ public final class SessionI implements Session {
 
     private final UserSession user;
     private final SessionManager sessions;
+    private final RoomManager rooms;
 
-    public SessionI(UserSession user, SessionManager sessions) {
+    public SessionI(UserSession user, SessionManager sessions, RoomManager rooms) {
         this.user = user;
         this.sessions = sessions;
+        this.rooms = rooms;
     }
 
     @Override
@@ -48,36 +54,37 @@ public final class SessionI implements Session {
         // Retornar sin excepcion confirma al emisor que el servidor recibio y despacho el mensaje
     }
 
-    // ---- RoomOps (M4) ----
+    // ---- RoomOps (RF-03) ----
 
     @Override
-    public void createRoom(String name, Current current) {
-        throw notYet(current);
+    public void createRoom(String name, Current current) throws RoomAlreadyExistsException, InvalidNameException {
+        rooms.create(user, name);
     }
 
     @Override
     public RoomInfo[] listRooms(Current current) {
-        throw notYet(current);
+        return rooms.list();
     }
 
     @Override
-    public void joinRoom(String name, Current current) {
-        throw notYet(current);
+    public void joinRoom(String name, Current current) throws RoomNotFoundException {
+        rooms.join(user, name);
     }
 
     @Override
-    public void leaveRoom(String name, Current current) {
-        throw notYet(current);
+    public void leaveRoom(String name, Current current) throws RoomNotFoundException, NotInRoomException {
+        rooms.leave(user, name);
     }
 
     @Override
-    public String[] listMembers(String name, Current current) {
-        throw notYet(current);
+    public String[] listMembers(String name, Current current) throws RoomNotFoundException {
+        return rooms.members(name);
     }
 
     @Override
-    public void sendToRoom(String name, String text, Current current) {
-        throw notYet(current);
+    public void sendToRoom(String name, String text, Current current) throws RoomNotFoundException, NotInRoomException {
+        // Retornar sin excepcion confirma al emisor que el servidor recibio y difundio el mensaje
+        rooms.send(user, name, text);
     }
 
     // ---- FileOps (M5) ----
