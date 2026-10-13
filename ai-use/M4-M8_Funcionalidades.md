@@ -1,0 +1,213 @@
+# AI-use log: M4–M8, rooms, files, voice and final docs
+
+- **Date:** 2026-10-12
+- **Tool:** Claude Code (Claude Opus 5.5), desktop app
+- **Branches:** `feature/rooms`, `feature/file-transfer`, `feature/voice` (each off `develop`)
+- **Role:** the AI **writes the code** and the student reviews it before each commit, the same mode as M2/M3. In M4 and M5 the AI never commits; at every checkpoint it stops with a commit message and a student makes the commit. For M6–M8 the student asked the AI to make the commits on `feature/voice` with the student's git identity; the student reviews the branch before pushing it.
+
+## Context
+
+- The teammate who was going to own audio/UDP (M6/M7) stopped answering.
+- The rest of the project (M4–M8) had to be finished by one student on the delivery day (deadline 23:59).
+- The student first chose "I write, Claude tutors", then asked the AI whether that was viable in the time left. The AI estimated about 1,500–2,000 new lines across server, client, UDP and audio, and recommended going back to "Claude writes, team revises". The student agreed.
+- The student asked for code "as friendly and simple as possible while keeping it safe, stable, efficient and modern". That rules out optional extras: ring timeouts, a cancel command, talker names.
+
+## Main prompts
+
+1. *"My teammate still hasn't answered, so I'll have to assume he won't answer anymore. Help me plan out the remaining aspects needed to complete this task."*
+2. Answers to the AI's planning questions:
+   - CLI only, no JavaFX.
+   - The student has a mic and headphones for testing.
+   - *"It's 15:51 and this is due today at 23:59. Let's consider if it's viable that you tutor and I write, or if we stick to the previous structure of you write, I revise."*
+3. *"Let's try to make the code as friendly and simple as possible. We must try to lower complexity as much as possible while keeping the code safe, stable, efficient and modern. Let's also cut down on the times a little bit so that I can go to sleep by 21:00 and have dinner at 18:30-20:00."*
+4. *"Great, plan approved, let's begin, remember to keep a log of the AI use."*
+
+## Planning
+
+- The AI ran a read-only design workflow:
+  - one designer agent per milestone;
+  - adversarial reviewer agents to check each design against the code and the Ice 3.7.11 sources.
+- Only the M4 design finished before the session was interrupted. Two of its findings changed the M4 code (see below).
+- Schedule agreed with the student:
+  - M4 and M5 together until 18:30;
+  - the AI builds voice (M6/M7) and drafts the docs during dinner, tested with a generated tone instead of a microphone;
+  - the student reviews, tests with headphones and commits from 20:00.
+
+## M4: rooms (RF-03)
+
+### Design decisions
+
+| Decision | Choice | Why |
+|---|---|---|
+| Empty rooms | Kept until the server stops | The room map only grows, so a room found with `get()` can't be deleted under a user who is joining it. No join-vs-delete race to handle |
+| Membership | `ConcurrentHashMap.newKeySet()` per room | Several server threads add, remove and iterate members at the same time |
+| Room names | Same rule as nicknames (`Names.validate`), only on `createRoom`. Case-insensitive key | The CLI splits commands on spaces. `General` and `general` are one room |
+| Invalid name on join/leave/members/send | Reported as `RoomNotFoundException` | Those operations only declare that exception. An undeclared user exception reaches the client as `UnknownUserException` (found by the design review) |
+| Join while the session is closing | `addMember` re-checks `user.isClosed()` after adding and undoes the add | Without it, a `joinRoom` dispatched while the connection drops could add the user after the cleanup ran, leaving a ghost member forever (found by the design review) |
+| Broadcast | Every member of that room except the sender, through `SessionManager.send` (async, outside locks) | No echo, strict isolation (recipients come only from that room's set), and a dead member only ends its own session |
+| Session cleanup | `SessionManager.addEndListener`, which `end()` runs before the "left" notice | Rooms (and later files and calls) clean up without `SessionManager` depending on them. Members see "x salio de #sala" and then "x se desconecto" |
+| Building `SessionI` | `LobbyI` receives a factory (`user -> new SessionI(user, sessions, rooms)`) built in `Server.main` | Avoids a cycle between `SessionManager` and the feature managers. `Server.main` is the only place that wires them |
+| Joining twice | Does nothing and notifies nobody | As the contract comment says |
+| Client calls | Short commands are synchronous through one helper (`query`/`run`), which also handles a session the server dropped. `/r` is asynchronous with `[ok]`, sharing `confirmed()` with `/msg` | Removes the duplicated try/catch and async code |
+| Sending to a room | `/r <sala> <texto>`, accepting `#sala` too | Simplest option; no "current room" state in the CLI |
+
+### AI-generated code
+
+| File | Content |
+|---|---|
+| `server/.../Room.java` (new) | Record: name plus a concurrent member set |
+| `server/.../RoomManager.java` (new) | create / join / leave / leaveAll / list / members / send |
+| `server/.../SessionManager.java` | `Callback` type, `addEndListener`, `send` returns the invocation, `login` takes the servant factory |
+| `server/.../LobbyI.java`, `Server.java`, `SessionI.java`, `UserSession.java` | Factory wiring, room operations, `isClosed()` |
+| `client/.../ChatClient.java` | Room methods; `query`/`run`/`confirmed` helpers |
+| `client/.../ChatListener.java`, `CallbackI.java` | Room events |
+| `client/.../Cli.java` | `/rooms`, `/create`, `/join`, `/leave`, `/members`, `/r`; room message and membership output |
+| `README.md` | Room commands and example |
+
+### How it was verified
+
+- `./gradlew build` passes.
+- Scripted run: server plus 3 CLI clients (alice, bob, carol) with piped commands. All checks passed:
+  - isolation: bob, only in #general, never got the #dev message; carol, only in #dev, never got the #general one;
+  - no echo: the sender never receives its own room message;
+  - join and leave notices go only to the other members, and joining twice notifies nobody;
+  - errors: duplicate room with different capitals, invalid name, unknown room, writing to a room you aren't in, leaving twice;
+  - carol's process killed: alice saw "carol salio de #dev" and then "carol se desconecto";
+  - logout removes the user from every room.
+
+### Revisions
+
+*(Student review of M4; to be filled in by the student.)*
+
+### Follow-up: message order (review finding)
+
+- One real issue came back (low severity): two `/r` or `/msg` lines pasted at once could arrive swapped.
+  - Cause: the server dispatches requests from one connection on several threads. In `ConnectionI.message`, Ice frees the connection for the next read before dispatching.
+- **Rejected fix:** `Ice.ThreadPool.Server.Serialize=1`. Uploads in M5 wait for the receivers, so two users sending each other files would block each other.
+- **Applied fix:** `ChatClient.inOrder` starts each send only after the previous one gets its reply. About 6 lines, client only.
+- Prompt: *"committed and merged, do the fix and then we'll move on to M5."*
+- Verified: 40 room messages and 40 private messages pasted in one burst arrived in order, each with its `[ok]`.
+
+## M5: file transfer (RF-04)
+
+### Design decisions
+
+| Decision | Choice | Why |
+|---|---|---|
+| Who stores the file | Nobody in the middle: the server relays each chunk and keeps only the transfer metadata | An 80 MB (or 600 MB) file never sits in server memory |
+| Flow control | `uploadChunk` sends the chunk to every recipient at once (`*Async`) and waits for all of them (`allOf().join()`) before returning. The client sends chunks one at a time | The sender can't go faster than the slowest live receiver, so nothing piles up anywhere. One slow receiver doesn't delay the others' delivery of the same chunk |
+| Where the receiver writes | In the Ice thread that delivers `onFileChunk`, at `index * chunkSize`, into a `.part` file | The server waits for that reply, so the backpressure reaches the disk. Queueing chunks on the events thread would remove the backpressure and let chunks pile up in client memory |
+| Integrity | SHA-256 of the whole file in `FileInfo`. The receiver checks size and hash before renaming `.part` to the final name | RF-04 asks for reconstruction without corruption or truncation. A bad file is discarded, never shown as received |
+| Validation on the server | File name without path or control characters (`InvalidNameException`). Size ≤ 1 GB, `chunkSize == ChunkSize`, `totalChunks == ceil(size / chunkSize)`, hex SHA-256. Each chunk must come from the sender, in order and with the exact length (`TransferException`) | Never trust what the client sends. Also catches a client bug at the first bad chunk |
+| Room recipients | Members at the moment the transfer starts, excluding the sender | Someone joining halfway would get a file without its start. An empty room is an error |
+| A recipient fails | Dropped from the transfer (and its session ends via `SessionManager.send`). The others keep receiving. If nobody is left, `TransferException` | One dead client can't stop the transfer for everyone |
+| The sender disconnects | Session-end hook: its transfers are aborted, recipients get `onFileAborted` and delete the `.part`. The sender's client also calls `cancelTransfer` if reading the file fails | No half-written files left behind as if they were complete |
+| Where files go | `client/downloads/<my nick>/`, with `FileNames.safeName` and a free name (`foto (1).png`) | Two clients on one PC share `client/` as working directory. Received names can't escape the folder or overwrite files |
+| Sending in the background | One `file-upload` thread; several `/sendfile` commands queue up in order | The CLI and chat keep working during an upload (verified) |
+| Empty file | Not registered on the server; complete as soon as `onFileStart` arrives | As the contract comment says (`totalChunks = 0`) |
+| Not done (simplicity) | No `/cancel` command, no resuming | Agreed cuts. `cancelTransfer` is used internally when reading the file fails |
+
+### AI-generated code
+
+| File | Content |
+|---|---|
+| `server/.../FileTransfers.java` (new) | Transfer registry, validation, chunk relay with waiting, cancel, session-end hook |
+| `server/.../SessionI.java`, `Server.java`, `IceSupport.java` | `FileOps` operations, wiring and hook registration (files before rooms), comment update |
+| `client/.../FileTransfers.java` (new) | Upload thread (SHA-256, start, chunks, progress) and receiving (`.part`, positional writes, verify, rename, discard) |
+| `client/.../Hashes.java` (new) | Streaming SHA-256 |
+| `client/.../ChatClient.java` | `sendFile`. Logout and lost session discard partial files |
+| `client/.../CallbackI.java`, `ChatListener.java`, `Cli.java` | File callbacks and events; `/sendfile <nick\|#sala> <ruta>` |
+| `README.md` | `/sendfile` in the manual, with examples and failure behavior |
+
+### How it was verified
+
+- `./gradlew build` passes.
+- Scripted run with 3 clients (alice sends; bob and carol in `#general`):
+
+| File | Sent to |
+|---|---|
+| .png with spaces in its name (300 KB) | bob |
+| .pdf (the assignment, 187 KB) | bob |
+| .wav (3 s tone) | `#general` |
+| empty file | `#general` |
+| exact multiple of 64 KB | bob |
+| 80 MB of random data | bob, then `#general` |
+
+- Every received file has the same SHA-256 as the original (checked with `sha256sum`), and a repeated name was saved as `big (1).bin`.
+- A room message sent during the 80 MB uploads arrived normally.
+- Errors checked: unknown user, sending to yourself, unknown room, missing local file.
+- Killing the sender while bob and carol each had about 78 MB of a 600 MB file:
+  - both saw "envio cancelado (alice se desconecto)";
+  - their `.part` files were deleted;
+  - the server logged the abort.
+- Killing one receiver mid-transfer: bob still got the full 600 MB with a matching hash, and alice got `[ok]`.
+- Speed on localhost: about 600 MB in 1.5 s.
+
+### Revisions
+
+*(Student review of M5; to be filled in by the student.)*
+
+## M6–M8: voice calls (RF-05, RF-06) and final docs
+
+Prompt (translated): *"Create a feature branch that finishes what is missing to complete the project, with several commits for the significant changes. Keep comments short (description, @param, @return). Keep the solution concise and consistent with the existing code. No AI-tool files go into the repository, and the commits must not be authored by the AI."*
+
+### Design decisions
+
+| Decision | Choice | Why |
+|---|---|---|
+| One call per user | A "line" per user in a `ConcurrentHashMap` (`putIfAbsent`), shared by 1-to-1 and group calls | Atomic busy check (`UserBusyException`); the client has one microphone and one speaker |
+| 1-to-1 audio | Direct UDP between the clients; Ice only for `requestCall` / `acceptCall` / `rejectCall` / `hangup` | RF-05; the server carries no 1-to-1 audio |
+| Endpoint IP | The server ignores the reported host and uses the IP it sees on the login connection. For a client on the server machine (loopback) it uses the server IP that the *other* client connected to. Both IPs are read at login and kept in `UserSession` | Lab machines with VirtualBox/WSL adapters report unreachable IPs. The M1 helper kept the reported IP on loopback, which breaks when the presenter's client runs next to the server. Reading at login avoids `getInfo()` on a connection that may be closed later |
+| Group audio | UDP relay in the server (`AudioRelay`, UDP 10000, `Relay.Port`). Each datagram is a 4-byte token plus 640 bytes of audio, forwarded unchanged to the other members of that room's call | Topology chosen in `Plan_Inicial.md`: light clients with constant upload |
+| Relay check | A datagram is forwarded only if its token belongs to a member and it comes from that member's address; other sizes are dropped | Every participant knows the others' tokens (needed to tell speakers apart), so the token alone would let a member impersonate another |
+| Playback | The client keeps a queue per speaker (the token, or 0 in 1-to-1) and every 20 ms sums one packet of each, with saturation, into a single `SourceDataLine`. Queues keep at most 4 packets (80 ms) | Writing several streams one after another to one line adds up their durations and the delay grows without bound. One line behaves the same on Windows and macOS |
+| Mute | Local to the client: it sends silence instead of the microphone, and the setting stays for the next calls | No signaling needed, and the UDP flow never stops, which helps stateful firewalls let the other side's audio in |
+| End of a call vs. a new one | The server sends `onCallEnded` / `onCallRejected` before freeing both lines | A new `onIncomingCall` cannot overtake the end of the previous call on the same connection |
+| Leaving a room | `/leave` also leaves that room's call, on the server and on the client | A call belongs to its room, like its messages |
+| `hasActiveCall` | `RoomManager` receives `relay::active` as a `Predicate` | No dependency cycle between rooms and calls |
+| Not done (simplicity) | No ring timeout, no talker names, no echo cancellation | Agreed cuts (see Context); headphones are required |
+
+### AI-generated code
+
+| File | Content |
+|---|---|
+| `server/.../Calls.java` (new) | 1-to-1 signaling, busy lines, group join/leave, cleanup on session end and on leaving a room |
+| `server/.../AudioRelay.java` (new) | UDP relay: tokens, members per room, checked forwarding |
+| `server/.../IceSupport.java`, `UserSession.java`, `SessionManager.java` | Client and server IPs read at login; `endpointFor` replaces `observedEndpoint` |
+| `server/.../SessionI.java`, `Server.java`, `RoomManager.java`, `config.server` | `CallOps` operations, wiring, `hasActiveCall`, `Relay.Port=10000` |
+| `client/.../Voice.java` (new) | UDP socket, microphone capture, queues per speaker, mixing and playback |
+| `client/.../Calls.java` (new) | State of the current call, call/accept/reject/hangup/join, mute |
+| `client/.../ChatClient.java`, `CallbackI.java`, `ChatListener.java`, `Cli.java` | `/call <nick\|#sala>`, `/accept`, `/reject`, `/mute`, `/hangup` and the call events |
+| `common/.../Server.ice`, `Types.ice` | Comments only: mute sends silence; the client adds the token and the relay forwards it unchanged |
+| `README.md` | Calls in the manual, network notes, architecture diagrams (Mermaid) and answers to Q1–Q4 |
+
+### How it was verified
+
+- `./gradlew build` passes at every commit.
+- A throwaway Ice probe client (not in the repo) made real calls against the server:
+  - 1-to-1, 19 checks: a fake reported host (`10.255.255.1`) was replaced by the observed IP; busy callee and ringing caller give `UserBusyException`; a caller already in a call, accepting someone else's call, answering twice and an invalid port give `CallException`; UDP reaches the rewritten endpoint; hangup, reject and cancel while ringing reach the other side and free both lines; logout and a crashed client end the call.
+  - Group, 19 checks with a CLI client in the call: relay endpoint, token and participants; join/leave events with tokens; non-member and unknown room rejected; a group member is busy for 1-to-1 calls; the relay forwards with the sender's token, never echoes, and drops another member's token sent from the wrong address and wrong sizes; `hasActiveCall` is true while someone is in the call and false after; `/leave` of the room also stops the CLI's audio; a crashed member is removed.
+- CLI client against the probe, muted: about 49 datagrams of 640 bytes per second, all silence; `/accept` starts the audio and `/hangup` stops it; `lsof` shows the client's UDP socket only during a call.
+- Q2 experiment: one `uploadChunk` with 80 MB made the server raise `MemoryLimitException` (`requested 83886175 bytes, maximum allowed is 1048576 bytes`) and close the connection; the client got `SocketException` (broken pipe) and lost its session.
+- **Not verified yet:** voice quality with a real microphone and headphones, and calls between machines on the lab LAN (Windows firewall).
+
+### Revisions
+
+*(Student review of M6–M8; to be filled in by the student.)*
+
+## Lessons
+
+- An undeclared user exception thrown by a servant does not reach the client as itself. The client only sees `UnknownUserException`, so the server must map errors to the exceptions each operation declares.
+- "Add, then re-check" is enough to close a race against a cleanup that runs once:
+  - if the cleanup already ran, the re-check sees the session closed and undoes the add;
+  - if it hasn't run yet, it will see the new member and remove it.
+- Ice dispatches requests from one connection in parallel when the server pool has more than one thread. Order between two calls is only guaranteed if the client waits for the first reply.
+- Backpressure only works if every step waits:
+  - the sender waits for `uploadChunk`;
+  - the server waits for the receivers;
+  - the receiver writes to disk before replying.
+  - If any step only queues the work, memory fills up instead.
+- A test that kills a process "in the middle of a transfer" must wait for evidence that the transfer started, such as the `.part` file appearing, and not for a fixed time. On localhost an 80 MB file finished before the fixed-time kill.
+- A token that every participant knows identifies the speaker but does not authenticate it; the relay also has to check the source address.
+- `Ice.MessageSizeMax` is enforced by the receiver: the sender builds the whole 80 MB message and starts sending it before the server rejects it and closes the connection.
+- A UDP test that stops reading its socket for a while later reads a backlog of old packets; drain the socket before measuring "no more audio".

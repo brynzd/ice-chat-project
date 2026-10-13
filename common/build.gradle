@@ -1,18 +1,21 @@
 plugins {
     id 'java-library'
     // Plugin oficial de ZeroC: compila los .ice a Java en build/generated-src
-    id 'com.zeroc.gradle.ice-builder.slice' version '1.5.2'
+    alias(libs.plugins.ice.builder)
 }
 
 // slice2java se localiza automaticamente (registro de Windows o ICE_HOME).
-// Debe coincidir con la version del runtime declarada abajo.
+// Debe coincidir con la version del runtime (gradle/libs.versions.toml).
 slice {
     java {
-        files = [file('src/main/slice/Chat.ice')]
+        // Compila todos los .ice de la carpeta (Types, Exceptions, Callbacks, Server)
+        srcDir = 'src/main/slice'
+        // Permite que los #include <Types.ice> se resuelvan entre archivos
+        include = [file('src/main/slice')]
     }
 }
 
 dependencies {
     // 'api' expone Ice a server y client sin redeclararlo
-    api 'com.zeroc:ice:3.7.11'
+    api libs.ice
 }

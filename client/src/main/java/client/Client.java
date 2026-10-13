@@ -1,23 +1,40 @@
 package client;
 
-import java.util.Scanner;
+import chat.LobbyPrx;
+import client.cli.Cli;
+import client.core.ChatClient;
+import com.zeroc.Ice.Communicator;
+import com.zeroc.Ice.ObjectAdapter;
+import com.zeroc.Ice.Util;
+
+import java.util.ArrayList;
+import java.util.List;
 
 public class Client {
 
     public static void main(String[] args) {
-        System.out.println("[client] skeleton OK - escribe algo (o /quit):");
+        List<String> extraArgs = new ArrayList<>();
+        // config.client: proxy del Lobby, adaptador de callbacks, hilos y heartbeats (ACM)
+        try (Communicator communicator = Util.initialize(args, "config.client", extraArgs)) {
+            // Permite sobrescribir cualquier propiedad con --Nombre=valor (p. ej. --Lobby.Proxy=...)
+            communicator.getProperties().parseCommandLineOptions("", extraArgs.toArray(new String[0]));
 
-        // Solo verifica que runClient recibe la entrada de la consola.
-        // TODO (M2): reemplazar por la CLI real (paquete client.cli),
-        //  que delega la logica en client.core.
-        try (Scanner in = new Scanner(System.in)) {
-            while (in.hasNextLine()) {
-                String line = in.nextLine();
-                if (line.equals("/quit")) {
-                    break;
-                }
-                System.out.println("[echo] " + line);
-            }
+            // Adaptador de los callbacks, sin endpoints: el servidor los invoca por la conexion
+            // del login (conexion bidireccional, ver ChatClient.login)
+            ObjectAdapter callbackAdapter = communicator.createObjectAdapter("");
+            callbackAdapter.activate();
+
+            LobbyPrx lobby = LobbyPrx.uncheckedCast(communicator.propertyToProxy("Lobby.Proxy"));
+            Cli cli = new Cli();
+            ChatClient chat = new ChatClient(callbackAdapter, lobby, cli);
+
+            // Ctrl+C: logout ordenado y luego cierre del communicator
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                chat.logout();
+                communicator.destroy();
+            }));
+
+            cli.run(chat);
         }
     }
 }
