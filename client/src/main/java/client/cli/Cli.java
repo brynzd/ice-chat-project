@@ -6,7 +6,6 @@ import chat.TextMessage;
 import client.core.ChatClient;
 import client.core.ChatListener;
 import com.zeroc.Ice.LocalException;
-import com.zeroc.Ice.OperationNotExistException;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -54,9 +53,15 @@ public final class Cli implements ChatListener {
             "  /members <sala>                ver los miembros de una sala",
             "  /r <sala> <texto>              mensaje a una sala",
             "  /sendfile <nick|#sala> <ruta>  enviar un archivo (se guarda en downloads/<nick>/)",
+            "  /call <nick|#sala>             llamar a un usuario o entrar a la llamada de una sala",
+            "  /accept, /reject               contestar o rechazar una llamada",
+            "  /mute                          silenciar o activar el microfono",
+            "  /hangup                        colgar o salir de la llamada",
             "  /logout                        cerrar sesion",
             "  /help                          esta ayuda",
             "  /quit                          salir");
+
+    private static final String CALL_HINT = "/mute para silenciar, /hangup para colgar";
 
     private ChatClient chat;
 
@@ -104,6 +109,11 @@ public final class Cli implements ChatListener {
                 case "/members" -> members(parts);
                 case "/r" -> roomMsg(parts);
                 case "/sendfile" -> sendFile(parts);
+                case "/call" -> call(parts);
+                case "/accept" -> accept();
+                case "/reject" -> reject();
+                case "/mute" -> mute();
+                case "/hangup" -> hangup();
                 case "/logout" -> logout();
                 default -> print("Comando desconocido: " + parts[0] + " (/help para ver los comandos)");
             }
@@ -270,6 +280,43 @@ public final class Cli implements ChatListener {
                 : String.format("%.1f MB", bytes / (1024.0 * 1024));
     }
 
+    // ---- Llamadas ----
+
+    private void call(String[] parts) throws ChatException {
+        if (parts.length != 2) {
+            print("Uso: /call <nick|#sala>");
+            return;
+        }
+        if (parts[1].startsWith("#")) {
+            String room = roomName(parts[1]);
+            String[] others = chat.joinGroupCall(room);
+            print("[llamada] Entraste a la llamada de #" + room + " ("
+                    + (others.length == 0 ? "eres el primero" : "ya estan: " + String.join(", ", others))
+                    + "). /mute para silenciar, /hangup para salir");
+            return;
+        }
+        chat.call(parts[1]);
+        print("[llamada] Llamando a " + parts[1] + "... (/hangup para cancelar)");
+    }
+
+    private void accept() throws ChatException {
+        print("[llamada] En llamada con " + chat.acceptCall() + ". " + CALL_HINT);
+    }
+
+    private void reject() throws ChatException {
+        chat.rejectCall();
+        print("[llamada] Llamada rechazada");
+    }
+
+    private void mute() {
+        print(chat.toggleMute() ? "[llamada] Microfono silenciado" : "[llamada] Microfono activado");
+    }
+
+    private void hangup() throws ChatException {
+        chat.hangup();
+        print("[llamada] Llamada terminada");
+    }
+
     private void logout() {
         if (!chat.isLoggedIn()) {
             print("No hay una sesion abierta");
@@ -336,6 +383,31 @@ public final class Cli implements ChatListener {
     }
 
     @Override
+    public void incomingCall(String from) {
+        print("[llamada] " + clean(from) + " te esta llamando. /accept para contestar, /reject para rechazar");
+    }
+
+    @Override
+    public void callAccepted(String peer) {
+        print("[llamada] " + clean(peer) + " contesto. " + CALL_HINT);
+    }
+
+    @Override
+    public void callEnded(String peer, String reason) {
+        print("[llamada] " + clean(peer) + " " + reason);
+    }
+
+    @Override
+    public void memberJoinedCall(String room, String nickname) {
+        print("* " + clean(nickname) + " entro a la llamada de #" + clean(room));
+    }
+
+    @Override
+    public void memberLeftCall(String room, String nickname) {
+        print("* " + clean(nickname) + " salio de la llamada de #" + clean(room));
+    }
+
+    @Override
     public void disconnected(String reason) {
         print("[error] " + reason + ". Usa /login <nick> para volver a entrar.");
     }
@@ -364,9 +436,6 @@ public final class Cli implements ChatListener {
         }
         if (error instanceof IOException) {
             return "no se pudo leer el archivo (" + error.getMessage() + ")";
-        }
-        if (error instanceof OperationNotExistException) {
-            return "Esta operacion aun no esta disponible en el servidor";
         }
         if (error instanceof com.zeroc.Ice.ConnectFailedException) {
             return "No se pudo conectar con el servidor (revisa Lobby.Proxy y que el servidor este corriendo)";

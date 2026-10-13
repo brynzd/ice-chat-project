@@ -56,27 +56,31 @@ public final class IceSupport {
 
     /** IP desde la que el cliente se conecto al servidor. */
     public static String remoteHost(Current current) {
-        ConnectionInfo info = current.con.getInfo();
-        while (info != null && !(info instanceof IPConnectionInfo)) {
-            info = info.underlying;
-        }
-        if (info == null) {
-            throw new IllegalStateException("La conexion no es TCP/UDP");
-        }
-        String host = ((IPConnectionInfo) info).remoteAddress;
-        // IPv4 vista desde un socket IPv6: ::ffff:192.168.1.5
-        return host.startsWith("::ffff:") ? host.substring("::ffff:".length()) : host;
+        return plainIp(ipInfo(current).remoteAddress);
     }
 
     /**
-     * Endpoint UDP reportado por el cliente, pero con la IP que observa el servidor. En
-     * maquinas con varias tarjetas de red el cliente puede reportar una IP inalcanzable.
-     * Si el cliente se conecto por loopback (misma maquina que el servidor) se conserva
-     * la IP reportada, porque 127.0.0.1 no le sirve a los demas.
+     * IP del servidor a la que se conecto el cliente.
+     *
+     * @param current llamada recibida por la conexion del cliente
+     * @return IP local de esa conexion
      */
-    public static AudioEndpoint observedEndpoint(AudioEndpoint reported, Current current) {
-        String observed = remoteHost(current);
-        return isLoopback(observed) ? reported : new AudioEndpoint(observed, reported.port);
+    public static String localHost(Current current) {
+        return plainIp(ipInfo(current).localAddress);
+    }
+
+    /**
+     * Endpoint UDP de owner tal como lo alcanza peer. Usa la IP que ve el servidor, no la reportada
+     * (con varias tarjetas de red puede ser inalcanzable); si owner esta en la maquina del servidor,
+     * usa la IP del servidor que conoce peer.
+     *
+     * @param owner cliente que recibe el audio
+     * @param port  puerto UDP donde recibe owner
+     * @param peer  cliente que le envia el audio
+     * @return direccion a la que peer debe enviar
+     */
+    public static AudioEndpoint endpointFor(UserSession owner, int port, UserSession peer) {
+        return new AudioEndpoint(isLoopback(owner.host()) ? peer.serverHost() : owner.host(), port);
     }
 
     /**
@@ -89,6 +93,33 @@ public final class IceSupport {
                 onFailure.run();
             }
         });
+    }
+
+    /**
+     * Datos IP de la conexion por la que llego la llamada.
+     *
+     * @param current llamada recibida
+     * @return informacion TCP/UDP de la conexion
+     */
+    private static IPConnectionInfo ipInfo(Current current) {
+        ConnectionInfo info = current.con.getInfo();
+        while (info != null && !(info instanceof IPConnectionInfo)) {
+            info = info.underlying;
+        }
+        if (info == null) {
+            throw new IllegalStateException("La conexion no es TCP/UDP");
+        }
+        return (IPConnectionInfo) info;
+    }
+
+    /**
+     * Quita el prefijo de una IPv4 vista desde un socket IPv6 (::ffff:192.168.1.5).
+     *
+     * @param host IP de la conexion
+     * @return IP sin prefijo
+     */
+    private static String plainIp(String host) {
+        return host.startsWith("::ffff:") ? host.substring("::ffff:".length()) : host;
     }
 
     private static boolean isLoopback(String host) {

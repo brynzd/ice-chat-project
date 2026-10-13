@@ -6,6 +6,9 @@
 # Sin -h escucha en todas las interfaces de la maquina.
 ChatAdapter.Endpoints=tcp -p 10000
 
+# Puerto UDP del relay de audio de las llamadas grupales (0 = cualquiera libre)
+Relay.Port=10000
+
 # Hilos que despachan las llamadas de los clientes. Con mas de 1 hilo no hay deadlock
 # cuando un callback llama de vuelta al servidor (servidor -> cliente -> servidor).
 Ice.ThreadPool.Server.Size=4

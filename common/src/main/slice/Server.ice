@@ -46,7 +46,7 @@ module chat
         void cancelTransfer(string transferId) throws TransferException;
     }
 
-    // RF-05 / RF-06: senalizacion de llamadas. Mute es local al cliente (deja de enviar audio).
+    // RF-05 / RF-06: senalizacion de llamadas. Mute es local al cliente (envia silencio en vez del microfono).
     interface CallOps
     {
         // 1 a 1: cada lado publica su propio endpoint UDP

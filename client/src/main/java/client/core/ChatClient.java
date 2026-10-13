@@ -33,6 +33,7 @@ public final class ChatClient {
     private final ClientCallbackPrx callback;
     private final ChatListener listener;
     private final FileTransfers files;
+    private final Calls calls;
 
     // Hilo de eventos: los callbacks de Ice solo encolan aqui y retornan enseguida,
     // asi la interfaz puede tardar en imprimir sin frenar a Ice ni al servidor
@@ -54,8 +55,9 @@ public final class ChatClient {
         this.callbackAdapter = callbackAdapter;
         this.listener = listener;
         this.files = new FileTransfers(listener, events, this::nickname);
+        this.calls = new Calls(listener);
         this.callback = ClientCallbackPrx.uncheckedCast(
-                callbackAdapter.addWithUUID(new CallbackI(listener, events, files)));
+                callbackAdapter.addWithUUID(new CallbackI(listener, events, files, calls)));
     }
 
     public synchronized void login(String nick) throws NicknameTakenException, InvalidNameException {
@@ -87,6 +89,7 @@ public final class ChatClient {
             nickname = null;
         }
         files.discardAll();
+        calls.discard();
         if (s != null) {
             try {
                 s.logout();
@@ -130,6 +133,7 @@ public final class ChatClient {
 
     public void leaveRoom(String name) throws ChatException {
         run(s -> s.leaveRoom(name));
+        calls.roomLeft(name);
     }
 
     public RoomInfo[] listRooms() throws ChatException {
@@ -158,6 +162,55 @@ public final class ChatClient {
             throw new IllegalStateException("No existe el archivo " + file);
         }
         return confirmed(s, files.send(s, target, file));
+    }
+
+    // ---- Llamadas (RF-05 / RF-06) ----
+
+    /**
+     * Llama a un usuario; el audio empieza cuando contesta.
+     *
+     * @param nick usuario al que se llama
+     */
+    public void call(String nick) throws ChatException {
+        run(s -> calls.call(s, nick));
+    }
+
+    /**
+     * Entra a la llamada grupal de una sala de la que se es miembro.
+     *
+     * @param room sala de la llamada
+     * @return nicknames de quienes ya estaban en la llamada
+     */
+    public String[] joinGroupCall(String room) throws ChatException {
+        return query(s -> calls.joinGroup(s, room));
+    }
+
+    /**
+     * Contesta la llamada entrante.
+     *
+     * @return nickname de quien llamo
+     */
+    public String acceptCall() throws ChatException {
+        return query(calls::accept);
+    }
+
+    /** Rechaza la llamada entrante. */
+    public void rejectCall() throws ChatException {
+        run(calls::reject);
+    }
+
+    /** Cuelga la llamada 1 a 1 o sale de la llamada grupal. */
+    public void hangup() throws ChatException {
+        run(calls::hangup);
+    }
+
+    /**
+     * Silencia o activa el microfono, tambien para las llamadas siguientes.
+     *
+     * @return true si quedo silenciado
+     */
+    public boolean toggleMute() {
+        return calls.toggleMute();
     }
 
     // ---- Llamadas a la sesion ----
@@ -240,6 +293,7 @@ public final class ChatClient {
         session = null;
         nickname = null;
         files.discardAll();
+        calls.discard();
         return true;
     }
 }

@@ -58,7 +58,8 @@ public final class SessionManager {
         }
 
         UserSession user = new UserSession(nickname, IceSupport.callbackOn(callback, current),
-                IceSupport.newSessionIdentity(), current.con);
+                IceSupport.newSessionIdentity(), current.con, IceSupport.remoteHost(current),
+                IceSupport.localHost(current));
         // putIfAbsent es atomico: si dos clientes piden el mismo nickname a la vez, solo uno lo obtiene
         if (users.putIfAbsent(Names.key(nickname), user) != null) {
             throw new NicknameTakenException("El nickname '" + nickname + "' ya esta en uso");

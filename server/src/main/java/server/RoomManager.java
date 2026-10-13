@@ -11,6 +11,7 @@ import com.zeroc.Ice.ObjectNotExistException;
 import java.util.Comparator;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.function.Predicate;
 
 /**
  * Salas de chat (RF-03). Las salas no se borran al quedar vacias: el mapa solo crece, asi una
@@ -21,9 +22,17 @@ public final class RoomManager {
     // clave: Names.key(nombre de la sala)
     private final ConcurrentMap<String, Room> rooms = new ConcurrentHashMap<>();
     private final SessionManager sessions;
+    private final Predicate<String> activeCall;
 
-    public RoomManager(SessionManager sessions) {
+    /**
+     * Crea el registro de salas.
+     *
+     * @param sessions   usuarios conectados
+     * @param activeCall indica si la sala con ese nombre tiene una llamada grupal en curso
+     */
+    public RoomManager(SessionManager sessions, Predicate<String> activeCall) {
         this.sessions = sessions;
+        this.activeCall = activeCall;
     }
 
     /** Crea la sala y une al creador. */
@@ -68,7 +77,7 @@ public final class RoomManager {
     /** Catalogo de salas en orden alfabetico. */
     public RoomInfo[] list() {
         return rooms.values().stream()
-                .map(room -> new RoomInfo(room.name(), room.members().size(), false)) // M7: llamada activa
+                .map(room -> new RoomInfo(room.name(), room.members().size(), activeCall.test(room.name())))
                 .sorted(Comparator.comparing(info -> Names.key(info.name)))
                 .toArray(RoomInfo[]::new);
     }

@@ -19,11 +19,13 @@ final class CallbackI implements ClientCallback {
     private final ChatListener listener;
     private final Executor events;
     private final FileTransfers files;
+    private final Calls calls;
 
-    CallbackI(ChatListener listener, Executor events, FileTransfers files) {
+    CallbackI(ChatListener listener, Executor events, FileTransfers files, Calls calls) {
         this.listener = listener;
         this.events = events;
         this.files = files;
+        this.calls = calls;
     }
 
     // ---- PresenceListener (RF-01) ----
@@ -81,29 +83,35 @@ final class CallbackI implements ClientCallback {
         files.aborted(transferId, reason);
     }
 
-    // ---- CallListener (M6 / M7) ----
+    // ---- CallListener (RF-05 / RF-06) ----
 
     @Override
     public void onIncomingCall(String callId, String from, AudioEndpoint callerEndpoint, Current current) {
+        events.execute(() -> calls.incoming(callId, from, callerEndpoint));
     }
 
     @Override
     public void onCallAccepted(String callId, AudioEndpoint calleeEndpoint, Current current) {
+        events.execute(() -> calls.accepted(callId, calleeEndpoint));
     }
 
     @Override
     public void onCallRejected(String callId, Current current) {
+        events.execute(() -> calls.ended(callId, "rechazo la llamada"));
     }
 
     @Override
     public void onCallEnded(String callId, Current current) {
+        events.execute(() -> calls.ended(callId, "termino la llamada"));
     }
 
     @Override
     public void onGroupCallMemberJoined(String room, String nickname, int token, Current current) {
+        events.execute(() -> listener.memberJoinedCall(room, nickname));
     }
 
     @Override
     public void onGroupCallMemberLeft(String room, String nickname, Current current) {
+        events.execute(() -> listener.memberLeftCall(room, nickname));
     }
 }

@@ -3,7 +3,7 @@
 - **Date:** 2026-10-12
 - **Tool:** Claude Code (Claude Opus 5.5), desktop app
 - **Branches:** `feature/rooms`, `feature/file-transfer`, `feature/voice` (each off `develop`)
-- **Role:** the AI **writes the code** and the student reviews it before each commit, the same mode as M2/M3. The AI never commits; at every checkpoint it stops with a commit message and a student makes the commit.
+- **Role:** the AI **writes the code** and the student reviews it before each commit, the same mode as M2/M3. In M4 and M5 the AI never commits; at every checkpoint it stops with a commit message and a student makes the commit. For M6–M8 the student asked the AI to make the commits on `feature/voice` with the student's git identity; the student reviews the branch before pushing it.
 
 ## Context
 
@@ -147,6 +147,54 @@
 
 *(Student review of M5; to be filled in by the student.)*
 
+## M6–M8: voice calls (RF-05, RF-06) and final docs
+
+Prompt (translated): *"Create a feature branch that finishes what is missing to complete the project, with several commits for the significant changes. Keep comments short (description, @param, @return). Keep the solution concise and consistent with the existing code. No AI-tool files go into the repository, and the commits must not be authored by the AI."*
+
+### Design decisions
+
+| Decision | Choice | Why |
+|---|---|---|
+| One call per user | A "line" per user in a `ConcurrentHashMap` (`putIfAbsent`), shared by 1-to-1 and group calls | Atomic busy check (`UserBusyException`); the client has one microphone and one speaker |
+| 1-to-1 audio | Direct UDP between the clients; Ice only for `requestCall` / `acceptCall` / `rejectCall` / `hangup` | RF-05; the server carries no 1-to-1 audio |
+| Endpoint IP | The server ignores the reported host and uses the IP it sees on the login connection. For a client on the server machine (loopback) it uses the server IP that the *other* client connected to. Both IPs are read at login and kept in `UserSession` | Lab machines with VirtualBox/WSL adapters report unreachable IPs. The M1 helper kept the reported IP on loopback, which breaks when the presenter's client runs next to the server. Reading at login avoids `getInfo()` on a connection that may be closed later |
+| Group audio | UDP relay in the server (`AudioRelay`, UDP 10000, `Relay.Port`). Each datagram is a 4-byte token plus 640 bytes of audio, forwarded unchanged to the other members of that room's call | Topology chosen in `Plan_Inicial.md`: light clients with constant upload |
+| Relay check | A datagram is forwarded only if its token belongs to a member and it comes from that member's address; other sizes are dropped | Every participant knows the others' tokens (needed to tell speakers apart), so the token alone would let a member impersonate another |
+| Playback | The client keeps a queue per speaker (the token, or 0 in 1-to-1) and every 20 ms sums one packet of each, with saturation, into a single `SourceDataLine`. Queues keep at most 4 packets (80 ms) | Writing several streams one after another to one line adds up their durations and the delay grows without bound. One line behaves the same on Windows and macOS |
+| Mute | Local to the client: it sends silence instead of the microphone, and the setting stays for the next calls | No signaling needed, and the UDP flow never stops, which helps stateful firewalls let the other side's audio in |
+| End of a call vs. a new one | The server sends `onCallEnded` / `onCallRejected` before freeing both lines | A new `onIncomingCall` cannot overtake the end of the previous call on the same connection |
+| Leaving a room | `/leave` also leaves that room's call, on the server and on the client | A call belongs to its room, like its messages |
+| `hasActiveCall` | `RoomManager` receives `relay::active` as a `Predicate` | No dependency cycle between rooms and calls |
+| Not done (simplicity) | No ring timeout, no talker names, no echo cancellation | Agreed cuts (see Context); headphones are required |
+
+### AI-generated code
+
+| File | Content |
+|---|---|
+| `server/.../Calls.java` (new) | 1-to-1 signaling, busy lines, group join/leave, cleanup on session end and on leaving a room |
+| `server/.../AudioRelay.java` (new) | UDP relay: tokens, members per room, checked forwarding |
+| `server/.../IceSupport.java`, `UserSession.java`, `SessionManager.java` | Client and server IPs read at login; `endpointFor` replaces `observedEndpoint` |
+| `server/.../SessionI.java`, `Server.java`, `RoomManager.java`, `config.server` | `CallOps` operations, wiring, `hasActiveCall`, `Relay.Port=10000` |
+| `client/.../Voice.java` (new) | UDP socket, microphone capture, queues per speaker, mixing and playback |
+| `client/.../Calls.java` (new) | State of the current call, call/accept/reject/hangup/join, mute |
+| `client/.../ChatClient.java`, `CallbackI.java`, `ChatListener.java`, `Cli.java` | `/call <nick\|#sala>`, `/accept`, `/reject`, `/mute`, `/hangup` and the call events |
+| `common/.../Server.ice`, `Types.ice` | Comments only: mute sends silence; the client adds the token and the relay forwards it unchanged |
+| `README.md` | Calls in the manual, network notes, architecture diagrams (Mermaid) and answers to Q1–Q4 |
+
+### How it was verified
+
+- `./gradlew build` passes at every commit.
+- A throwaway Ice probe client (not in the repo) made real calls against the server:
+  - 1-to-1, 19 checks: a fake reported host (`10.255.255.1`) was replaced by the observed IP; busy callee and ringing caller give `UserBusyException`; a caller already in a call, accepting someone else's call, answering twice and an invalid port give `CallException`; UDP reaches the rewritten endpoint; hangup, reject and cancel while ringing reach the other side and free both lines; logout and a crashed client end the call.
+  - Group, 19 checks with a CLI client in the call: relay endpoint, token and participants; join/leave events with tokens; non-member and unknown room rejected; a group member is busy for 1-to-1 calls; the relay forwards with the sender's token, never echoes, and drops another member's token sent from the wrong address and wrong sizes; `hasActiveCall` is true while someone is in the call and false after; `/leave` of the room also stops the CLI's audio; a crashed member is removed.
+- CLI client against the probe, muted: about 49 datagrams of 640 bytes per second, all silence; `/accept` starts the audio and `/hangup` stops it; `lsof` shows the client's UDP socket only during a call.
+- Q2 experiment: one `uploadChunk` with 80 MB made the server raise `MemoryLimitException` (`requested 83886175 bytes, maximum allowed is 1048576 bytes`) and close the connection; the client got `SocketException` (broken pipe) and lost its session.
+- **Not verified yet:** voice quality with a real microphone and headphones, and calls between machines on the lab LAN (Windows firewall).
+
+### Revisions
+
+*(Student review of M6–M8; to be filled in by the student.)*
+
 ## Lessons
 
 - An undeclared user exception thrown by a servant does not reach the client as itself. The client only sees `UnknownUserException`, so the server must map errors to the exceptions each operation declares.
@@ -160,3 +208,6 @@
   - the receiver writes to disk before replying.
   - If any step only queues the work, memory fills up instead.
 - A test that kills a process "in the middle of a transfer" must wait for evidence that the transfer started, such as the `.part` file appearing, and not for a fixed time. On localhost an 80 MB file finished before the fixed-time kill.
+- A token that every participant knows identifies the speaker but does not authenticate it; the relay also has to check the source address.
+- `Ice.MessageSizeMax` is enforced by the receiver: the sender builds the whole 80 MB message and starts sending it before the server rejects it and closes the connection.
+- A UDP test that stops reading its socket for a while later reads a backlog of old packets; drain the socket before measuring "no more audio".
