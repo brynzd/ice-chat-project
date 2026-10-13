@@ -63,8 +63,8 @@ module chat
         int port;
     }
 
-    // Participante de una llamada grupal. El relay antepone el token del emisor a cada
-    // datagrama reenviado, asi el receptor sabe de quien es cada paquete.
+    // Participante de una llamada grupal. Cada datagrama lleva al inicio el token de quien
+    // habla y el relay lo reenvia tal cual, asi el receptor sabe de quien es cada paquete.
     struct GroupCallMember
     {
         string nickname;
