@@ -36,6 +36,28 @@ public interface ChatListener {
     /** Un archivo que estabas recibiendo se cancelo, llego danado o no se pudo guardar. */
     void fileFailed(String fileName, String reason);
 
+    /**
+     * Alguien te llama; se contesta con acceptCall o rejectCall.
+     *
+     * @param from quien llama
+     */
+    void incomingCall(String from);
+
+    /**
+     * El usuario al que llamaste contesto y empezo el audio.
+     *
+     * @param peer quien contesto
+     */
+    void callAccepted(String peer);
+
+    /**
+     * La llamada 1 a 1 termino del otro lado.
+     *
+     * @param peer   el otro usuario
+     * @param reason que paso, por ejemplo "rechazo la llamada"
+     */
+    void callEnded(String peer, String reason);
+
     /** Se perdio la conexion con el servidor sin haber hecho logout. */
     void disconnected(String reason);
 }
