@@ -16,7 +16,6 @@ import chat.TransferException;
 import chat.UserBusyException;
 import chat.UserNotFoundException;
 import com.zeroc.Ice.Current;
-import com.zeroc.Ice.OperationNotExistException;
 
 /** Servant Session de un usuario: todas sus operaciones saben quien llama. */
 public final class SessionI implements Session {
@@ -81,6 +80,7 @@ public final class SessionI implements Session {
     @Override
     public void leaveRoom(String name, Current current) throws RoomNotFoundException, NotInRoomException {
         rooms.leave(user, name);
+        calls.leftRoom(user, name);
     }
 
     @Override
@@ -142,17 +142,13 @@ public final class SessionI implements Session {
     }
 
     @Override
-    public GroupCallInfo joinGroupCall(String room, AudioEndpoint myEndpoint, Current current) {
-        throw notYet(current);
+    public GroupCallInfo joinGroupCall(String room, AudioEndpoint myEndpoint, Current current)
+            throws RoomNotFoundException, NotInRoomException, CallException {
+        return calls.joinGroup(user, room, myEndpoint);
     }
 
     @Override
-    public void leaveGroupCall(String room, Current current) {
-        throw notYet(current);
-    }
-
-    // Operacion declarada en el contrato pero aun no implementada
-    private static OperationNotExistException notYet(Current current) {
-        return new OperationNotExistException(current.id, current.facet, current.operation);
+    public void leaveGroupCall(String room, Current current) throws CallException {
+        calls.leaveGroup(user, room);
     }
 }
