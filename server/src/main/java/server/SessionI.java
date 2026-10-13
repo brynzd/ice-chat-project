@@ -1,6 +1,7 @@
 package server;
 
 import chat.AudioEndpoint;
+import chat.CallException;
 import chat.FileChunk;
 import chat.FileInfo;
 import chat.GroupCallInfo;
@@ -12,6 +13,7 @@ import chat.RoomNotFoundException;
 import chat.Session;
 import chat.TextMessage;
 import chat.TransferException;
+import chat.UserBusyException;
 import chat.UserNotFoundException;
 import com.zeroc.Ice.Current;
 import com.zeroc.Ice.OperationNotExistException;
@@ -23,12 +25,14 @@ public final class SessionI implements Session {
     private final SessionManager sessions;
     private final RoomManager rooms;
     private final FileTransfers files;
+    private final Calls calls;
 
-    public SessionI(UserSession user, SessionManager sessions, RoomManager rooms, FileTransfers files) {
+    public SessionI(UserSession user, SessionManager sessions, RoomManager rooms, FileTransfers files, Calls calls) {
         this.user = user;
         this.sessions = sessions;
         this.rooms = rooms;
         this.files = files;
+        this.calls = calls;
     }
 
     @Override
@@ -114,26 +118,27 @@ public final class SessionI implements Session {
         files.cancel(user, transferId);
     }
 
-    // ---- CallOps (M6 / M7) ----
+    // ---- CallOps (RF-05 / RF-06) ----
 
     @Override
-    public String requestCall(String to, AudioEndpoint myEndpoint, Current current) {
-        throw notYet(current);
+    public String requestCall(String to, AudioEndpoint myEndpoint, Current current)
+            throws UserNotFoundException, UserBusyException, CallException {
+        return calls.request(user, to, myEndpoint);
     }
 
     @Override
-    public void acceptCall(String callId, AudioEndpoint myEndpoint, Current current) {
-        throw notYet(current);
+    public void acceptCall(String callId, AudioEndpoint myEndpoint, Current current) throws CallException {
+        calls.accept(user, callId, myEndpoint);
     }
 
     @Override
-    public void rejectCall(String callId, Current current) {
-        throw notYet(current);
+    public void rejectCall(String callId, Current current) throws CallException {
+        calls.reject(user, callId);
     }
 
     @Override
-    public void hangup(String callId, Current current) {
-        throw notYet(current);
+    public void hangup(String callId, Current current) throws CallException {
+        calls.hangup(user, callId);
     }
 
     @Override

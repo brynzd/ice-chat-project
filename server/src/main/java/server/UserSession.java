@@ -13,13 +13,18 @@ public final class UserSession {
     private final ClientCallbackPrx callback;
     private final Identity identity;
     private final Connection connection;
+    private final String host;
+    private final String serverHost;
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
-    public UserSession(String nickname, ClientCallbackPrx callback, Identity identity, Connection connection) {
+    public UserSession(String nickname, ClientCallbackPrx callback, Identity identity, Connection connection,
+                       String host, String serverHost) {
         this.nickname = nickname;
         this.callback = callback;
         this.identity = identity;
         this.connection = connection;
+        this.host = host;
+        this.serverHost = serverHost;
     }
 
     public String nickname() {
@@ -39,6 +44,24 @@ public final class UserSession {
     /** Conexion por la que el usuario hizo login. */
     public Connection connection() {
         return connection;
+    }
+
+    /**
+     * IP del cliente tal como la ve el servidor.
+     *
+     * @return IP remota de la conexion del login
+     */
+    public String host() {
+        return host;
+    }
+
+    /**
+     * IP del servidor tal como la usa el cliente.
+     *
+     * @return IP local de la conexion del login
+     */
+    public String serverHost() {
+        return serverHost;
     }
 
     /** true si la sesion ya se cerro (logout, conexion perdida o callback fallido). */
