@@ -107,9 +107,11 @@ final class CallbackI implements ClientCallback {
 
     @Override
     public void onGroupCallMemberJoined(String room, String nickname, int token, Current current) {
+        events.execute(() -> listener.memberJoinedCall(room, nickname));
     }
 
     @Override
     public void onGroupCallMemberLeft(String room, String nickname, Current current) {
+        events.execute(() -> listener.memberLeftCall(room, nickname));
     }
 }

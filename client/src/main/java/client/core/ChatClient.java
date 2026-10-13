@@ -133,6 +133,7 @@ public final class ChatClient {
 
     public void leaveRoom(String name) throws ChatException {
         run(s -> s.leaveRoom(name));
+        calls.roomLeft(name);
     }
 
     public RoomInfo[] listRooms() throws ChatException {
@@ -175,6 +176,16 @@ public final class ChatClient {
     }
 
     /**
+     * Entra a la llamada grupal de una sala de la que se es miembro.
+     *
+     * @param room sala de la llamada
+     * @return nicknames de quienes ya estaban en la llamada
+     */
+    public String[] joinGroupCall(String room) throws ChatException {
+        return query(s -> calls.joinGroup(s, room));
+    }
+
+    /**
      * Contesta la llamada entrante.
      *
      * @return nickname de quien llamo
@@ -188,7 +199,7 @@ public final class ChatClient {
         run(calls::reject);
     }
 
-    /** Cuelga la llamada actual. */
+    /** Cuelga la llamada 1 a 1 o sale de la llamada grupal. */
     public void hangup() throws ChatException {
         run(calls::hangup);
     }

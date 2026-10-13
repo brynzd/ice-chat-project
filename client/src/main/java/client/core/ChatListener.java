@@ -58,6 +58,22 @@ public interface ChatListener {
      */
     void callEnded(String peer, String reason);
 
+    /**
+     * Alguien entro a la llamada grupal en la que estas.
+     *
+     * @param room     sala de la llamada
+     * @param nickname quien entro
+     */
+    void memberJoinedCall(String room, String nickname);
+
+    /**
+     * Alguien salio de la llamada grupal en la que estas; la llamada sigue.
+     *
+     * @param room     sala de la llamada
+     * @param nickname quien salio
+     */
+    void memberLeftCall(String room, String nickname);
+
     /** Se perdio la conexion con el servidor sin haber hecho logout. */
     void disconnected(String reason);
 }

@@ -3,13 +3,16 @@ package client.core;
 import chat.AudioEndpoint;
 import chat.CallException;
 import chat.ChatException;
+import chat.GroupCallInfo;
 import chat.SessionPrx;
 import com.zeroc.Ice.ConnectionInfo;
 import com.zeroc.Ice.IPConnectionInfo;
 
 import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
+import java.util.Arrays;
 
-/** Llamadas de voz 1 a 1 (RF-05): estado de la llamada actual y su audio. Solo hay una llamada a la vez. */
+/** Llamadas de voz 1 a 1 (RF-05) y grupales (RF-06): estado de la llamada actual y su audio. Solo una a la vez. */
 final class Calls {
 
     private static final byte[] NO_HEADER = new byte[0];
@@ -19,6 +22,7 @@ final class Calls {
     private String callId;
     private String peer;
     private AudioEndpoint ringing;
+    private String room;
     private boolean muted;
 
     /**
@@ -88,19 +92,58 @@ final class Calls {
     }
 
     /**
-     * Cuelga la llamada actual, tambien si aun timbra.
+     * Entra a la llamada grupal de la sala; el audio va y viene por el relay del servidor.
+     *
+     * @param session  sesion actual
+     * @param roomName sala de la llamada
+     * @return nicknames de quienes ya estaban en la llamada
+     */
+    synchronized String[] joinGroup(SessionPrx session, String roomName) throws ChatException {
+        requireIdle();
+        Voice v = open();
+        GroupCallInfo info;
+        try {
+            info = session.joinGroupCall(roomName, endpoint(session, v));
+        } catch (ChatException | RuntimeException e) {
+            v.close();
+            throw e;
+        }
+        v.start(address(info.relay), ByteBuffer.allocate(Integer.BYTES).putInt(info.token).array());
+        voice = v;
+        room = roomName;
+        return Arrays.stream(info.participants).map(member -> member.nickname).toArray(String[]::new);
+    }
+
+    /**
+     * Cuelga la llamada 1 a 1 (tambien si aun timbra) o sale de la llamada grupal.
      *
      * @param session sesion actual
      */
     synchronized void hangup(SessionPrx session) throws ChatException {
         String id = callId;
-        if (id == null) {
+        String groupRoom = room;
+        if (id == null && groupRoom == null) {
             throw new IllegalStateException("No estas en una llamada");
         }
         clear();
         try {
-            session.hangup(id);
+            if (id != null) {
+                session.hangup(id);
+            } else {
+                session.leaveGroupCall(groupRoom);
+            }
         } catch (CallException ignored) {
+        }
+    }
+
+    /**
+     * Al salir de una sala tambien termina su llamada grupal; el servidor ya saco al usuario.
+     *
+     * @param roomName sala de la que se salio
+     */
+    synchronized void roomLeft(String roomName) {
+        if (room != null && room.equalsIgnoreCase(roomName)) {
+            clear();
         }
     }
 
@@ -126,7 +169,7 @@ final class Calls {
      */
     void incoming(String id, String from, AudioEndpoint endpoint) {
         synchronized (this) {
-            if (callId != null) {
+            if (callId != null || room != null) {
                 return;
             }
             callId = id;
@@ -178,7 +221,7 @@ final class Calls {
     }
 
     private void requireIdle() {
-        if (callId != null) {
+        if (callId != null || room != null) {
             throw new IllegalStateException("Ya estas en una llamada. Usa /hangup primero");
         }
     }
@@ -203,6 +246,7 @@ final class Calls {
         callId = null;
         peer = null;
         ringing = null;
+        room = null;
     }
 
     /**
